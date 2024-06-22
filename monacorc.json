@@ -26,5 +26,8 @@
   "acceptSuggestionOnEnter": "off",
   "acceptSuggestionOnCommitCharacter": false,
   "wordBasedSuggestions": false,
-  "snippetSuggestions": "none"
+  "snippetSuggestions": "none",
+  "cursorSmoothCaretAnimation": true,
+  "scrollBeyondLastColumn": 2,
+  "scrollPredominantAxis": true
 }

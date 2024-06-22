@@ -1,11 +1,10 @@
-const { app, BrowserWindow, nativeTheme } = require("electron");
+const { app, BrowserWindow, nativeTheme, globalShortcut } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
 let win;
 
 function createWindow() {
-  // 既にウィンドウが存在する場合はそれをアクティブにする
   if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
@@ -20,6 +19,11 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
+    frame: false,
+  });
+
+  globalShortcut.register("CommandOrControl+W", () => {
+    win.close();
   });
 
   const { Menu } = require("electron");
@@ -39,14 +43,12 @@ function createWindow() {
 
   win.loadFile(path.join(__dirname, "..", "index.html"));
 
-  // monacorc.jsonを読み込む
   const monacorcPath = path.join(__dirname, "..", "monacorc.json");
   const monacorcContent = fs.readFileSync(monacorcPath, "utf-8");
   const monacorcSettings = JSON.parse(monacorcContent);
 
   const isDarkMode = nativeTheme.shouldUseDarkColors;
 
-  // 設定をレンダラープロセスに送信
   win.webContents.on("did-finish-load", () => {
     const theme = {
       theme: isDarkMode ? "vs-dark" : "vs-light",
@@ -55,12 +57,10 @@ function createWindow() {
     win.webContents.send("monaco-settings", configs);
   });
 
-  // システムテーマの変更を監視
   nativeTheme.on("updated", () => {
     win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
   });
 
-  // 初期テーマを設定
   win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
 }
 
