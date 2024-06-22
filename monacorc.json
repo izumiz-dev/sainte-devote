@@ -1,0 +1,30 @@
+{
+  "value": "// happy drafting",
+  "language": "plaintext",
+  "theme": "vs-dark",
+  "automaticLayout": true,
+  "fontSize": 14,
+  "minimap": {
+    "enabled": false
+  },
+  "lineNumbers": "off",
+  "wordWrap": "on",
+  "scrollBeyondLastLine": false,
+  "renderWhitespace": "all",
+  "tabSize": 2,
+  "cursorStyle": "line",
+  "cursorWidth": 2,
+  "matchBrackets": "always",
+  "smoothScrolling": true,
+  "renderLineHighlight": "all",
+  "folding": false,
+  "quickSuggestions": false,
+  "suggestOnTriggerCharacters": false,
+  "parameterHints": {
+    "enabled": false
+  },
+  "acceptSuggestionOnEnter": "off",
+  "acceptSuggestionOnCommitCharacter": false,
+  "wordBasedSuggestions": false,
+  "snippetSuggestions": "none"
+}

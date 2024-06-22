@@ -1,0 +1,32 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  transition: background-color 0.3s ease;
+}
+
+body.dark-theme {
+  background-color: #1e1e1e;
+}
+
+body.light-theme {
+  background-color: #ffffff;
+}
+
+#container {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Monaco Editorのスクロールバーを非表示にする */
+.monaco-scrollable-element>.scrollbar,
+.monaco-scrollable-element>.scrollbar.vertical {
+  display: none !important;
+}
