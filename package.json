@@ -4,7 +4,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --debug",
+    "dev": "cross-env NODE_ENV=development electron .",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
@@ -46,6 +46,7 @@
     "monaco-editor": "^0.50.0"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^31.0.2",
     "electron-builder": "^24.13.3"
   }

@@ -15,6 +15,19 @@ function createWindow() {
     },
   });
 
+  const { Menu } = require("electron");
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "Developer",
+      submenu: [{ role: "toggleDevTools" }],
+    },
+  ]);
+  Menu.setApplicationMenu(menu);
+
+  if (process.env.NODE_ENV === "development") {
+    win.webContents.openDevTools();
+  }
+
   win.removeMenu();
 
   win.loadFile(path.join(__dirname, "..", "index.html"));
