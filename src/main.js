@@ -5,6 +5,13 @@ const fs = require("fs");
 let win;
 
 function createWindow() {
+  // 既にウィンドウが存在する場合はそれをアクティブにする
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    return;
+  }
+
   win = new BrowserWindow({
     width: 400,
     height: 400,

@@ -13,6 +13,17 @@ require(["vs/editor/editor.main"], function () {
       },
     });
 
+    // 保存された内容を復元
+    const savedContent = localStorage.getItem("editorContent");
+    if (savedContent) {
+      editor.setValue(savedContent);
+    }
+
+    // エディタの内容が変更されたら保存
+    editor.onDidChangeModelContent(() => {
+      localStorage.setItem("editorContent", editor.getValue());
+    });
+
     // 初期テーマを設定
     updateBodyTheme(settings.theme === "vs-dark");
 
