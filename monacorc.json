@@ -4,7 +4,7 @@
   "theme": "vs-dark",
   "automaticLayout": true,
   "fontFamily": "Menlo, 'Cascadia Code', DejaVu Sans Mono, 'Hiragino Kaku Gothic ProN', Meiryo, 'Noto Sans JP', monospace, san-serif",
-  "fontSize": 14,
+  "fontSize": 18,
   "minimap": {
     "enabled": false
   },

@@ -16,6 +16,7 @@ function createWindow() {
   setupMenu();
   loadContent();
   setupTheme();
+  setupMenu();
 }
 
 function restoreExistingWindow() {
@@ -35,6 +36,7 @@ function getWindowOptions() {
       preload: path.join(__dirname, "preload.js"),
     },
     frame: false,
+    enableMenuItemShortcuts: true,
   };
 }
 
@@ -68,8 +70,6 @@ function setupMenu() {
   if (process.env.NODE_ENV === "development") {
     win.webContents.openDevTools();
   }
-
-  win.removeMenu();
 }
 
 function loadContent() {
@@ -94,6 +94,34 @@ function sendMonacoSettings() {
     theme: nativeTheme.shouldUseDarkColors ? "vs-dark" : "vs-light",
   };
   win.webContents.send("monaco-settings", configs);
+}
+
+function setupMenu() {
+  const template = [
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "Developer",
+      submenu: [{ role: "toggleDevTools" }],
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+
+  if (process.env.NODE_ENV === "development") {
+    win.webContents.openDevTools();
+  }
 }
 
 app.whenReady().then(createWindow);
