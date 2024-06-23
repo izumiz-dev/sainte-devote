@@ -3,6 +3,7 @@
   "language": "plaintext",
   "theme": "vs-dark",
   "automaticLayout": true,
+  "fontFamily": "Menlo, 'Cascadia Code', DejaVu Sans Mono, 'Hiragino Kaku Gothic ProN', Meiryo, 'Noto Sans JP', monospace, san-serif",
   "fontSize": 14,
   "minimap": {
     "enabled": false
@@ -18,7 +19,6 @@
   "smoothScrolling": true,
   "renderLineHighlight": "all",
   "folding": false,
-  "quickSuggestions": false,
   "suggestOnTriggerCharacters": false,
   "parameterHints": {
     "enabled": false
@@ -29,5 +29,11 @@
   "snippetSuggestions": "none",
   "cursorSmoothCaretAnimation": true,
   "scrollBeyondLastColumn": 2,
-  "scrollPredominantAxis": true
+  "scrollPredominantAxis": true,
+  "quickSuggestions": {
+    "other": false,
+    "comments": false,
+    "strings": false
+  },
+  "quickOpenEnabled": false
 }

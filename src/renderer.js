@@ -23,6 +23,13 @@ require(["vs/editor/editor.main"], function () {
 
     updateBodyTheme(settings.theme === "vs-dark");
 
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP,
+      () => {
+        editor.trigger("", "editor.action.quickCommand", null);
+      }
+    );
+
     window.electron.receive("theme-changed", (isDark) => {
       const theme = isDark ? "vs-dark" : "vs-light";
       monaco.editor.setTheme(theme);

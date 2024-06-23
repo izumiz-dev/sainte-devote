@@ -40,7 +40,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "description": "Sainte devote is tiny monaco editor.",
   "dependencies": {
     "monaco-editor": "^0.50.0"
