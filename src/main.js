@@ -1,10 +1,5 @@
-const {
-  app,
-  BrowserWindow,
-  nativeTheme,
-  globalShortcut,
-  ipcMain,
-} = require("electron");
+const { app, BrowserWindow, nativeTheme, Menu, ipcMain } = require("electron");
+
 const path = require("path");
 const fs = require("fs");
 
@@ -12,12 +7,24 @@ let win;
 
 function createWindow() {
   if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
+    restoreExistingWindow();
     return;
   }
 
-  win = new BrowserWindow({
+  win = new BrowserWindow(getWindowOptions());
+  setupWindowEventListeners();
+  setupMenu();
+  loadContent();
+  setupTheme();
+}
+
+function restoreExistingWindow() {
+  if (win.isMinimized()) win.restore();
+  win.focus();
+}
+
+function getWindowOptions() {
+  return {
     width: 400,
     height: 600,
     minWidth: 400,
@@ -28,13 +35,28 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
     frame: false,
-  });
+  };
+}
 
-  globalShortcut.register("CommandOrControl+W", () => {
-    win.minimize();
-  });
+function setupWindowEventListeners() {
+  win.webContents.on("before-input-event", handleKeyboardShortcuts);
+  win.webContents.on("did-finish-load", sendMonacoSettings);
+}
 
-  const { Menu } = require("electron");
+function handleKeyboardShortcuts(event, input) {
+  if (input.type === "keyDown") {
+    const isCloseCommand =
+      (process.platform === "darwin" && input.meta && input.key === "w") ||
+      (process.platform !== "darwin" && input.control && input.key === "w");
+
+    if (isCloseCommand) {
+      win.minimize();
+      event.preventDefault();
+    }
+  }
+}
+
+function setupMenu() {
   const menu = Menu.buildFromTemplate([
     {
       label: "Developer",
@@ -48,32 +70,30 @@ function createWindow() {
   }
 
   win.removeMenu();
+}
 
+function loadContent() {
   win.loadFile(path.join(__dirname, "..", "index.html"));
+}
 
-  const monacorcPath = path.join(__dirname, "..", "monacorc.json");
-  const monacorcContent = fs.readFileSync(monacorcPath, "utf-8");
-  const monacorcSettings = JSON.parse(monacorcContent);
-
-  const isDarkMode = nativeTheme.shouldUseDarkColors;
-
-  win.webContents.on("did-finish-load", () => {
-    const theme = {
-      theme: isDarkMode ? "vs-dark" : "vs-light",
-    };
-    const configs = Object.assign(monacorcSettings, theme);
-    win.webContents.send("monaco-settings", configs);
-  });
-
+function setupTheme() {
   nativeTheme.on("updated", () => {
     win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
   });
 
   win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
+}
 
-  ipcMain.on("minimize-window", () => {
-    win.minimize();
-  });
+function sendMonacoSettings() {
+  const monacorcPath = path.join(__dirname, "..", "monacorc.json");
+  const monacorcContent = fs.readFileSync(monacorcPath, "utf-8");
+  const monacorcSettings = JSON.parse(monacorcContent);
+
+  const configs = {
+    ...monacorcSettings,
+    theme: nativeTheme.shouldUseDarkColors ? "vs-dark" : "vs-light",
+  };
+  win.webContents.send("monaco-settings", configs);
 }
 
 app.whenReady().then(createWindow);
@@ -88,4 +108,12 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+ipcMain.on("close-window", () => {
+  app.quit();
+});
+
+ipcMain.on("minimize-window", () => {
+  win.minimize();
 });

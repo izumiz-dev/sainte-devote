@@ -24,12 +24,10 @@ body {
   z-index: 10;
 }
 
+#close-button,
 #minimize-button {
   position: absolute;
   top: 4px;
-  left: 4px;
-  background-color: #9b9b9b;
-  border: none;
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -38,25 +36,49 @@ body {
   align-items: center;
   -webkit-app-region: no-drag;
   border-radius: 50%;
+  border: none;
+  transition: background-color 0.3s;
+}
+
+#close-button {
+  left: 4px;
+}
+
+#minimize-button {
+  left: 24px;
+}
+
+#close-button:hover {
+  background-color: #ff3b30;
 }
 
 #minimize-button:hover {
   background-color: #ffbd44;
 }
 
-body.dark-theme #minimize-button {
-  background-color: #444;
-}
-
+body.light-theme #close-button,
 body.light-theme #minimize-button {
-  background-color: #9b9b9b;
+  background-color: #d3d3d3;
 }
 
-body.dark-theme #minimize-button:hover {
-  background-color: #ffbd44;
+body.dark-theme #close-button,
+body.dark-theme #minimize-button {
+  background-color: #4a4a4a;
+}
+
+body.light-theme #close-button:hover {
+  background-color: #ff3b30;
 }
 
 body.light-theme #minimize-button:hover {
+  background-color: #ffbd44;
+}
+
+body.dark-theme #close-button:hover {
+  background-color: #ff3b30;
+}
+
+body.dark-theme #minimize-button:hover {
   background-color: #ffbd44;
 }
 
