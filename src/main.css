@@ -24,7 +24,7 @@ body {
   z-index: 10;
 }
 
-#close-button {
+#minimize-button {
   position: absolute;
   top: 4px;
   left: 4px;
@@ -40,24 +40,24 @@ body {
   border-radius: 50%;
 }
 
-#close-button:hover {
-  background-color: #ff6347;
+#minimize-button:hover {
+  background-color: #ffbd44;
 }
 
-body.dark-theme #close-button {
+body.dark-theme #minimize-button {
   background-color: #444;
 }
 
-body.light-theme #close-button {
+body.light-theme #minimize-button {
   background-color: #9b9b9b;
 }
 
-body.dark-theme #close-button:hover {
-  background-color: #ff6347;
+body.dark-theme #minimize-button:hover {
+  background-color: #ffbd44;
 }
 
-body.light-theme #close-button:hover {
-  background-color: #ff6347;
+body.light-theme #minimize-button:hover {
+  background-color: #ffbd44;
 }
 
 body.dark-theme {

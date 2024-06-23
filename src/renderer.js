@@ -47,6 +47,6 @@ function updateBodyTheme(isDark) {
   document.body.classList.add(isDark ? "dark-theme" : "light-theme");
 }
 
-document.getElementById("close-button").addEventListener("click", () => {
-  window.close();
+document.getElementById("minimize-button").addEventListener("click", () => {
+  window.electron.send("minimize-window");
 });

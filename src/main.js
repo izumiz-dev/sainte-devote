@@ -1,4 +1,10 @@
-const { app, BrowserWindow, nativeTheme, globalShortcut } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  nativeTheme,
+  globalShortcut,
+  ipcMain,
+} = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -25,7 +31,7 @@ function createWindow() {
   });
 
   globalShortcut.register("CommandOrControl+W", () => {
-    win.close();
+    win.minimize();
   });
 
   const { Menu } = require("electron");
@@ -64,6 +70,10 @@ function createWindow() {
   });
 
   win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
+
+  ipcMain.on("minimize-window", () => {
+    win.minimize();
+  });
 }
 
 app.whenReady().then(createWindow);
