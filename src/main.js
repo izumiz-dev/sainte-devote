@@ -19,12 +19,6 @@ const monacoSettings = {
 };
 
 function createWindow() {
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
-    return;
-  }
-
   win = new BrowserWindow(monacoSettings);
   win.webContents.on("did-finish-load", sendMonacoSettings);
   win.loadFile(path.join(__dirname, "..", "index.html"));
@@ -51,11 +45,5 @@ app.whenReady().then(createWindow);
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
-  }
-});
-
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
   }
 });
