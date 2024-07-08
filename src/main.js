@@ -23,10 +23,19 @@ function createWindow() {
   win.webContents.on("did-finish-load", sendMonacoSettings);
   win.loadFile(path.join(__dirname, "..", "index.html"));
   win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
-  nativeTheme.on("updated", () => {
-    win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
+
+  win.on('closed', () => {
+    win = null;
   });
 }
+
+function handleThemeChange() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
+  }
+}
+
+nativeTheme.on("updated", handleThemeChange);
 
 function sendMonacoSettings() {
   const monacorcPath = path.join(__dirname, "..", "monacorc.json");
@@ -42,8 +51,18 @@ function sendMonacoSettings() {
 
 app.whenReady().then(createWindow);
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit()
   }
+})
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow()
+  }
+})
+
+app.on('before-quit', () => {
+  nativeTheme.removeListener("updated", handleThemeChange);
 });
