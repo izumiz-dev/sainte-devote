@@ -1,9 +1,25 @@
-const { app, BrowserWindow, nativeTheme } = require("electron");
+const { app, BrowserWindow, nativeTheme, shell, ipcMain } = require("electron");
 
 const path = require("path");
 const fs = require("fs");
 
 let win;
+
+const isDev = process.env.NODE_ENV === "development";
+
+if (isDev) {
+  require("electron-reload")(__dirname, {
+    electron: require("path").join(
+      __dirname,
+      "..",
+      "node_modules",
+      ".bin",
+      "electron"
+    ),
+    forceHardReset: true,
+    hardResetMethod: "exit",
+  });
+}
 
 const monacoSettings = {
   width: 400,
@@ -24,8 +40,20 @@ function createWindow() {
   win.loadFile(path.join(__dirname, "..", "index.html"));
   win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
 
-  win.on('closed', () => {
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.key === "F12") {
+      win.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
+  win.on("closed", () => {
     win = null;
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
   });
 }
 
@@ -51,18 +79,23 @@ function sendMonacoSettings() {
 
 app.whenReady().then(createWindow);
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
   }
-})
+});
 
-app.on('activate', () => {
+app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
+    createWindow();
   }
-})
+});
 
-app.on('before-quit', () => {
+app.on("before-quit", () => {
   nativeTheme.removeListener("updated", handleThemeChange);
+});
+
+// 新しいイベントリスナーを追加
+ipcMain.on("open-external", (event, url) => {
+  shell.openExternal(url);
 });

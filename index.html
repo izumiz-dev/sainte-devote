@@ -4,11 +4,23 @@
     <meta charset="UTF-8" />
     <title>Sainte Devote</title>
     <link rel="stylesheet" href="src/main.css" />
+    <link
+      id="github-markdown-css"
+      rel="stylesheet"
+      href="node_modules/github-markdown-css/github-markdown-light.css"
+    />
   </head>
   <body>
+    <button id="mode-switch-btn">🔄️</button>
     <div id="container"></div>
+    <div id="preview" class="markdown-body"></div>
     <script>
-      var require = { paths: { vs: "node_modules/monaco-editor/min/vs" } };
+      var require = {
+        paths: {
+          vs: "node_modules/monaco-editor/min/vs",
+          marked: "node_modules/marked/marked.min",
+        },
+      };
     </script>
     <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
     <script src="src/renderer.js"></script>

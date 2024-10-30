@@ -4,7 +4,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "cross-env NODE_ENV=development electron .",
+    "dev": "cross-env NODE_ENV=development electronmon .",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
@@ -41,11 +41,17 @@
   "license": "MIT",
   "description": "Sainte devote is tiny monaco editor.",
   "dependencies": {
-    "monaco-editor": "^0.50.0"
+    "github-markdown-css": "^5.7.0",
+    "monaco-editor": "^0.50.0",
+    "marked": "^5.1.0"
   },
   "devDependencies": {
+    "concurrently": "^8.2.1",
     "cross-env": "^7.0.3",
     "electron": "^31.0.2",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "electron-reload": "^2.0.0-alpha.1",
+    "electronmon": "^2.0.3",
+    "wait-on": "^8.0.1"
   }
 }

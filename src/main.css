@@ -26,3 +26,58 @@ body.light-theme {
   overflow: hidden;
   position: absolute;
 }
+
+#mode-switch-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 24px;
+  z-index: 100;
+  width: 50px;
+  height: 50px;
+  background-color: #4e5d6d;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  font-size: 1.5rem;
+  text-align: center;
+  line-height: 50px;
+}
+
+#mode-switch-btn:hover {
+  background-color: #3b4a5a;
+}
+
+#mode-switch-btn:active {
+  background-color: #2a3745;
+}
+
+#preview {
+  display: none;
+  width: 100%;
+  height: 100vh;
+  overflow: auto;
+  padding: 20px;
+  box-sizing: border-box;
+  position: absolute;
+}
+
+.markdown-light {
+  background-color: #ffffff;
+  color: #24292e;
+}
+
+
+.markdown-dark {
+  background-color: #0d1117;
+  color: #c9d1d9;
+}
+
+.markdown-body {
+  margin: auto;
+  padding: 20px;
+}
