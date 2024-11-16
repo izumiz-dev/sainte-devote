@@ -434,14 +434,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     .addEventListener('click', toggleMode);
 
   window.electron.receive('theme-changed', (isDark) => {
-    monacoSettings.theme = isDark ? 'vs-dark' : 'vs-light';
-    updateBodyTheme(isDark);
+    if (monacoSettings) {
+      monacoSettings.theme = isDark ? 'vs-dark' : 'vs-light';
+      updateBodyTheme(isDark);
+    }
   });
 
   window.electron.receive('monaco-settings', (settings) => {
-    monacoSettings = settings;
-    updateBodyTheme(monacoSettings.theme === 'vs-dark');
-    initializeTabs();
+    if (!monacoSettings) {
+      monacoSettings = settings;
+      updateBodyTheme(monacoSettings.theme === 'vs-dark');
+      initializeTabs();
+    }
   });
 
   window.addEventListener('resize', () => {

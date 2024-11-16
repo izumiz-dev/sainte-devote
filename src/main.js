@@ -65,14 +65,7 @@ function createWindow() {
 
 function handleThemeChange() {
   if (win && !win.isDestroyed()) {
-    const isDark = nativeTheme.shouldUseDarkColors;
-    win.webContents.send('theme-changed', isDark);
-
-    const configs = {
-      ...monacoSettings,
-      theme: isDark ? 'vs-dark' : 'vs-light',
-    };
-    win.webContents.send('monaco-settings', configs);
+    win.webContents.send('theme-changed', nativeTheme.shouldUseDarkColors);
   }
 }
 
