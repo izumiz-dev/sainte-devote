@@ -54,13 +54,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       const transaction = db.transaction(['tabs'], 'readwrite');
       const store = transaction.objectStore('tabs');
 
-      // オブジェクトの配列に変換する際にidが確実に含まれるようにする
-      const data = Object.entries(tabData).map(([id, tab]) => ({
-        ...tab,
-        id: Number(id), // idを確実に数値型で含める
-      }));
-
-      data.forEach((tab) => store.put(tab));
+      // 既存のデータをクリア
+      store.clear().onsuccess = () => {
+        // 現在のタブデータを保存
+        Object.entries(tabData).forEach(([id, tab]) => {
+          store.put({
+            id: Number(id),
+            title: tab.title,
+            content: tab.content || '',
+          });
+        });
+      };
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject('Transaction error');
@@ -115,19 +119,24 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  // IndexedDBからタブデータを削除する関数を追加
-  function deleteTabDataIndexedDB() {
+  // IndexedDBからタブデータを削除する関数を修正
+  function deleteTabDataIndexedDB(tabId) {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['tabs'], 'readwrite');
+      const store = transaction.objectStore('tabs');
+      store.delete(Number(tabId));
+
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject('Delete tab data error');
     });
   }
 
-  // IndexedDBからコンテンツを削除する関数を追加
-  function deleteEditorContentIndexedDB() {
+  // IndexedDBからコンテンツを削除する関数を修正
+  function deleteEditorContentIndexedDB(tabId) {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['content'], 'readwrite');
+      const store = transaction.objectStore('content');
+      store.delete(Number(tabId));
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject('Delete content error');
@@ -387,11 +396,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   // closeTab関数を修正
   async function closeTab(tabId) {
+    // タブIDを数値型に変換
+    tabId = Number(tabId);
+
     // タブとエディタを削除
     const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
     const editor = document.querySelector(`.editor[data-tab="${tabId}"]`);
-    if (tab) tab.parentElement.removeChild(tab);
-    if (editor) editor.parentElement.removeChild(editor);
+
+    if (tab) tab.remove();
+    if (editor) editor.remove();
 
     // エディタとタブデータを削除
     if (editors[tabId]) {
@@ -407,6 +420,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         deleteTabDataIndexedDB(tabId),
         deleteEditorContentIndexedDB(tabId),
       ]);
+      await saveTabData(); // 残りのタブデータを保存
     } catch (error) {
       // eslint-disable-next-line no-undef
       console.error('Error deleting data from IndexedDB:', error);
@@ -415,15 +429,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     initializedEditors.delete(tabId);
 
     // 残りのタブ処理
-    const remainingTabs = Object.keys(editors);
+    const remainingTabs = Object.keys(tabData);
     if (remainingTabs.length > 0) {
-      switchTab(remainingTabs[0]);
+      switchTab(Number(remainingTabs[0]));
     } else {
       currentTab = null;
       previewContainer.style.display = 'none';
       document.querySelectorAll('.editor').forEach((editor) => {
         editor.style.display = 'none';
       });
+      addTab(); // タブが一つもない場合は新しいタブを作成
     }
   }
 
@@ -441,6 +456,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   window.electron.receive('monaco-settings', (settings) => {
+    // 初回のみ実行されるようにする
     if (!monacoSettings) {
       monacoSettings = settings;
       updateBodyTheme(monacoSettings.theme === 'vs-dark');
