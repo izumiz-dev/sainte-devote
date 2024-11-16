@@ -1,4 +1,10 @@
-const { app, BrowserWindow, nativeTheme, shell, ipcMain } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  nativeTheme,
+  shell,
+  ipcMain
+} = require("electron");
 
 const path = require("path");
 const fs = require("fs");
@@ -59,7 +65,14 @@ function createWindow() {
 
 function handleThemeChange() {
   if (win && !win.isDestroyed()) {
-    win.webContents.send("theme-changed", nativeTheme.shouldUseDarkColors);
+    const isDark = nativeTheme.shouldUseDarkColors;
+    win.webContents.send("theme-changed", isDark);
+
+    const configs = {
+      ...monacoSettings,
+      theme: isDark ? "vs-dark" : "vs-light",
+    };
+    win.webContents.send("monaco-settings", configs);
   }
 }
 

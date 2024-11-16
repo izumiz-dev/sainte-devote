@@ -12,7 +12,13 @@
   </head>
   <body>
     <button id="mode-switch-btn">🔄️</button>
-    <div id="container"></div>
+    <div id="tabs">
+      <button class="tab active" data-tab="1">Initial Tab</button>
+      <button class="add-tab-btn">＋</button>
+    </div>
+    <div id="editor-container">
+      <div class="editor" data-tab="1"></div>
+    </div>
     <div id="preview" class="markdown-body"></div>
     <script>
       var require = {
