@@ -8,7 +8,9 @@
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
   },
   "build": {
     "appId": "dev.izumiz.sainte-devote",
@@ -42,8 +44,8 @@
   "description": "Sainte devote is tiny monaco editor.",
   "dependencies": {
     "github-markdown-css": "^5.7.0",
-    "monaco-editor": "^0.50.0",
-    "marked": "^5.1.0"
+    "marked": "^5.1.0",
+    "monaco-editor": "^0.50.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
@@ -52,6 +54,10 @@
     "electron-builder": "^24.13.3",
     "electron-reload": "^2.0.0-alpha.1",
     "electronmon": "^2.0.3",
+    "eslint": "^9.15.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "prettier": "^3.3.3",
     "wait-on": "^8.0.1"
   }
 }
