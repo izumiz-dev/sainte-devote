@@ -644,8 +644,23 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   document.addEventListener('keydown', (event) => {
+    // Escapeキーでコンテキストメニューを閉じる
     if (event.key === 'Escape' && contextMenu) {
       hideContextMenu();
+    }
+    
+    // Ctrl/Cmd + T で新しいタブを作成
+    if ((event.ctrlKey || event.metaKey) && event.key === 't') {
+      event.preventDefault();
+      addTab();
+    }
+    
+    // Ctrl/Cmd + W でタブを削除
+    if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
+      event.preventDefault();
+      if (currentTab) {
+        closeTab(currentTab);
+      }
     }
   });
 
