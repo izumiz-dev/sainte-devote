@@ -146,31 +146,47 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function initializeEditor(settings, tabId) {
-    if (initializedEditors.has(tabId)) return;
+    // 既に初期化済みまたは設定が不正な場合はスキップ
+    if (initializedEditors.has(tabId) || !settings || !tabId) return;
 
     const container = document.querySelector(`.editor[data-tab="${tabId}"]`);
-    if (!container) return;
+    if (!container) {
+      console.warn(`Editor container not found for tab ${tabId}`);
+      return;
+    }
 
-    editors[tabId] = monaco.editor.create(container, {
-      ...settings,
-      scrollbar: {
-        vertical: 'hidden',
-        horizontal: 'hidden',
-      },
-    });
+    // 既存のエディタがある場合は破棄してから再作成
+    if (editors[tabId]) {
+      editors[tabId].dispose();
+      delete editors[tabId];
+    }
 
-    loadEditorContentIndexedDB(tabId).then((savedContent) => {
-      if (savedContent) {
-        editors[tabId].setValue(savedContent);
-      }
-    });
+    try {
+      editors[tabId] = monaco.editor.create(container, {
+        ...settings,
+        scrollbar: {
+          vertical: 'hidden',
+          horizontal: 'hidden',
+        },
+      });
 
-    editors[tabId].onDidChangeModelContent(async () => {
-      const content = editors[tabId].getValue();
-      await saveEditorContentIndexedDB(tabId, content);
-    });
+      loadEditorContentIndexedDB(tabId).then((savedContent) => {
+        if (savedContent && editors[tabId]) {
+          editors[tabId].setValue(savedContent);
+        }
+      });
 
-    initializedEditors.add(tabId);
+      editors[tabId].onDidChangeModelContent(async () => {
+        if (editors[tabId]) {
+          const content = editors[tabId].getValue();
+          await saveEditorContentIndexedDB(tabId, content);
+        }
+      });
+
+      initializedEditors.add(tabId);
+    } catch (error) {
+      console.error(`Failed to initialize editor for tab ${tabId}:`, error);
+    }
   }
 
   // 利用可能な次のタブIDを取得（1から始まる連番）
@@ -308,8 +324,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     switchTab(tabId);
     
-    // 新しく作成されたタブにスクロール
+    // エディタを強制初期化（プレビューモードに関係なく）
     setTimeout(() => {
+      initializeEditor(monacoSettings, tabId);
       const newTabElement = document.querySelector(`.tab[data-tab="${tabId}"]`);
       if (newTabElement) {
         scrollToActiveTab(newTabElement);
@@ -357,6 +374,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     currentTab = tabId;
 
+    // エディタを初期化（モードに関係なく）
+    initializeEditor(monacoSettings, tabId);
+
     // プレビューモードとエディタモードの切り替え
     if (isPreview) {
       const markdownContent = editors[currentTab]?.getValue() || '';
@@ -374,8 +394,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       );
       editorElement.style.display = 'block';
 
-      // エディタの初期化と表示を確実に行う
-      initializeEditor(monacoSettings, tabId);
+      // エディタのレイアウト調整
       if (editors[tabId]) {
         editors[tabId].layout();
       }
@@ -400,7 +419,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   function toggleMode() {
     isPreview = !isPreview;
     if (isPreview) {
-      const markdownContent = editors[currentTab].getValue();
+      const markdownContent = editors[currentTab]?.getValue() || '';
       const htmlContent = marked.parse(markdownContent);
       previewContainer.innerHTML = htmlContent;
       document.querySelector(
@@ -409,9 +428,20 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       previewContainer.style.display = 'block';
     } else {
       previewContainer.style.display = 'none';
-      document.querySelector(
+      const editorElement = document.querySelector(
         `.editor[data-tab="${currentTab}"]`,
-      ).style.display = 'block';
+      );
+      editorElement.style.display = 'block';
+
+      // プレビューモード解除時に未初期化エディタをチェック・初期化
+      if (!editors[currentTab] && monacoSettings) {
+        initializeEditor(monacoSettings, currentTab);
+      }
+      
+      // エディタのレイアウト調整
+      if (editors[currentTab]) {
+        editors[currentTab].layout();
+      }
     }
   }
 
