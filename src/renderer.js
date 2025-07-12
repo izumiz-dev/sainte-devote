@@ -13,10 +13,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   const editors = {};
   let currentTab = null;
-  let tabCount = 1;
   let isPreview = false;
   let monacoSettings;
   const tabData = {}; // タブ情報を保持
+  let draggedTab = null;
   const markdownCache = {}; // markdownのキャッシュを保持するオブジェクトを追加
   const initializedEditors = new Set(); // エディタの初期化状態を追跡
 
@@ -62,6 +62,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
             id: Number(id),
             title: tab.title,
             content: tab.content || '',
+            order: tab.order || 0,
           });
         });
       };
@@ -83,9 +84,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           tabData[tab.id] = {
             title: tab.title,
             content: tab.content || '',
+            order: tab.order || 0,
           };
-          if (tab.id > tabCount) tabCount = tab.id;
         });
+        // tabCountは使用しないため削除
         resolve();
       };
 
@@ -171,6 +173,64 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     initializedEditors.add(tabId);
   }
 
+  // 利用可能な次のタブIDを取得（1から始まる連番）
+  function getNextAvailableTabId() {
+    const existingIds = Object.keys(tabData).map(Number).sort((a, b) => a - b);
+    for (let i = 1; i <= existingIds.length + 1; i++) {
+      if (!existingIds.includes(i)) {
+        return i;
+      }
+    }
+    return 1;
+  }
+
+  // 表示用のタブ番号を取得（常に1から始まる連番）
+  function getDisplayTabNumber(tabId) {
+    // 現在のタブの順序に基づいて番号を計算
+    const orderedTabs = getTabsByOrder();
+    const index = orderedTabs.findIndex(tab => tab.id === Number(tabId));
+    return index >= 0 ? index + 1 : orderedTabs.length + 1;
+  }
+
+  // タブの位置順序を取得
+  function getTabsByOrder() {
+    return Object.entries(tabData)
+      .map(([id, data]) => ({ id: Number(id), ...data }))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+
+  // タブの順序を更新
+  function updateTabOrder() {
+    const tabs = document.querySelectorAll('.tab[data-tab]:not(.add-tab-btn)');
+    tabs.forEach((tab, index) => {
+      const tabId = Number(tab.dataset.tab);
+      if (tabData[tabId]) {
+        tabData[tabId].order = index;
+      }
+    });
+    saveTabData();
+  }
+
+  // アクティブタブにスクロール
+  function scrollToActiveTab(tabElement) {
+    if (!tabElement) return;
+    
+    const tabsContainer = document.getElementById('tabs');
+    const tabRect = tabElement.getBoundingClientRect();
+    const containerRect = tabsContainer.getBoundingClientRect();
+    
+    // タブがコンテナの左端より外側にある場合
+    if (tabRect.left < containerRect.left) {
+      const scrollAmount = tabRect.left - containerRect.left - 10; // 10pxのマージン
+      tabsContainer.scrollLeft += scrollAmount;
+    }
+    // タブがコンテナの右端より外側にある場合
+    else if (tabRect.right > containerRect.right) {
+      const scrollAmount = tabRect.right - containerRect.right + 10; // 10pxのマージン
+      tabsContainer.scrollLeft += scrollAmount;
+    }
+  }
+
   function updateBodyTheme(isDark) {
     document.body.classList.remove('dark-theme', 'light-theme');
     document.body.classList.add(isDark ? 'dark-theme' : 'light-theme');
@@ -201,15 +261,30 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   function addTab(tabId = null, title = null, content = null) {
     // タブIDを確実に数値型にする
-    tabId = tabId !== null ? Number(tabId) : ++tabCount;
-    if (isNaN(tabId)) tabId = ++tabCount;
+    if (tabId !== null) {
+      tabId = Number(tabId);
+      if (isNaN(tabId)) tabId = getNextAvailableTabId();
+    } else {
+      tabId = getNextAvailableTabId();
+    }
 
-    title = title || `Tab ${tabId}`;
+    // tabDataオブジェクトを先に作成してからタイトルを設定
+    const currentOrder = Object.keys(tabData).length;
+    tabData[tabId] = {
+      id: tabId,
+      title: '',
+      content: content || '',
+      order: currentOrder,
+    };
+
+    title = title || `Tab ${getDisplayTabNumber(tabId)}`;
+    tabData[tabId].title = title;
 
     const tabs = document.getElementById('tabs');
     const newTab = document.createElement('button');
     newTab.classList.add('tab');
     newTab.dataset.tab = tabId;
+    newTab.draggable = true;
 
     // 閉じるボタンを追加
     const tabTitle = document.createElement('span');
@@ -229,16 +304,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     newEditor.dataset.tab = tabId;
     newEditor.style.display = 'none';
     editorContainer.appendChild(newEditor);
-
-    // tabDataオブジェクトにidフィールドを追加
-    tabData[tabId] = {
-      id: tabId, // この行を追加
-      title: title,
-      content: content || '',
-    };
     saveTabData();
 
     switchTab(tabId);
+    
+    // 新しく作成されたタブにスクロール
+    setTimeout(() => {
+      const newTabElement = document.querySelector(`.tab[data-tab="${tabId}"]`);
+      if (newTabElement) {
+        scrollToActiveTab(newTabElement);
+      }
+    }, 0);
   }
 
   function getMarkdownHtml(content, tabId) {
@@ -265,6 +341,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const newTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
     newTab.classList.add('active');
     activeTabElement = newTab;
+
+    // アクティブタブが表示されるようにスクロール
+    scrollToActiveTab(newTab);
 
     // 現在のタブを非表示
     if (currentTab) {
@@ -307,10 +386,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     await openDatabase();
     await loadTabDataIndexedDB();
     if (Object.keys(tabData).length > 0) {
-      for (const tabId of Object.keys(tabData)) {
-        const title = tabData[tabId].title;
-        const content = await loadEditorContentIndexedDB(tabId);
-        addTab(parseInt(tabId), title, content);
+      // 順序通りにタブを復元
+      const orderedTabs = getTabsByOrder();
+      for (const tab of orderedTabs) {
+        const content = await loadEditorContentIndexedDB(tab.id);
+        addTab(tab.id, tab.title, content);
       }
     } else {
       addTab();
@@ -346,6 +426,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   addTabBtn.addEventListener('click', () => addTab());
 
+  // タブエリアでの水平スクロール機能
+  tabs.addEventListener('wheel', (event) => {
+    // 縦スクロールを水平スクロールに変換
+    if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+      event.preventDefault();
+      const scrollAmount = event.deltaY * 0.5; // スクロール速度を調整
+      tabs.scrollLeft += scrollAmount;
+    }
+  }, { passive: false });
+
   tabs.addEventListener('click', (event) => {
     const target = event.target.closest('.tab, .close-tab-btn');
     if (!target) return;
@@ -357,6 +447,65 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       closeTab(tabId);
     }
   });
+
+  // ホイールクリック（中クリック）でタブを削除
+  tabs.addEventListener('mousedown', (event) => {
+    // 中クリック（ホイールクリック）の場合
+    if (event.button === 1) {
+      event.preventDefault(); // デフォルトの中クリック動作を防ぐ
+      
+      const tab = event.target.closest('.tab');
+      if (tab && tab.dataset.tab) {
+        const tabId = tab.dataset.tab;
+        closeTab(tabId);
+      }
+    }
+  });
+
+  // ドラッグ&ドロップイベントリスナー
+  tabs.addEventListener('dragstart', (event) => {
+    if (event.target.classList.contains('tab') && event.target.dataset.tab) {
+      draggedTab = event.target;
+      event.target.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  });
+
+  tabs.addEventListener('dragend', (event) => {
+    if (event.target.classList.contains('tab')) {
+      event.target.classList.remove('dragging');
+      draggedTab = null;
+      updateTabOrder();
+    }
+  });
+
+  tabs.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    
+    const afterElement = getDragAfterElement(tabs, event.clientX);
+    if (draggedTab && afterElement == null) {
+      tabs.insertBefore(draggedTab, addTabBtn);
+    } else if (draggedTab && afterElement) {
+      tabs.insertBefore(draggedTab, afterElement);
+    }
+  });
+
+  // ドラッグ中の要素の位置を計算
+  function getDragAfterElement(container, x) {
+    const draggableElements = [...container.querySelectorAll('.tab:not(.dragging):not(.add-tab-btn)')];
+    
+    return draggableElements.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = x - box.left - box.width / 2;
+      
+      if (offset < 0 && offset > closest.offset) {
+        return { offset: offset, element: child };
+      } else {
+        return closest;
+      }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+  }
 
   tabs.addEventListener('dblclick', (event) => {
     if (
@@ -376,7 +525,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       tab.replaceChild(input, span);
 
       input.addEventListener('blur', () => {
-        const newTitle = input.value || `Tab ${tabId}`;
+        const newTitle = input.value || `Tab ${getDisplayTabNumber(tabId)}`;
         span.textContent = newTitle;
         tab.replaceChild(span, input);
 
@@ -394,10 +543,166 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
+  // カスタム確認ダイアログを作成
+  function showConfirmDialog(message) {
+    return new Promise((resolve) => {
+      // ダイアログコンテナを作成
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(2px);
+      `;
+
+      const dialog = document.createElement('div');
+      dialog.style.cssText = `
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+      `;
+
+      // ダークテーマ対応
+      if (document.body.classList.contains('dark-theme')) {
+        dialog.style.background = '#1f2937';
+        dialog.style.color = '#f9fafb';
+      }
+
+      const messageEl = document.createElement('p');
+      messageEl.textContent = message;
+      messageEl.style.cssText = `
+        margin: 0 0 24px 0;
+        line-height: 1.5;
+        font-size: 14px;
+      `;
+
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = `
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+      `;
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.style.cssText = `
+        padding: 8px 20px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #f9fafb;
+        color: #374151;
+        font-size: 14px;
+        cursor: pointer;
+        font-weight: 500;
+      `;
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = '削除';
+      deleteBtn.style.cssText = `
+        padding: 8px 20px;
+        border: 1px solid #dc2626;
+        border-radius: 6px;
+        background: #dc2626;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+        font-weight: 500;
+      `;
+
+      // ダークテーマでのボタンスタイル調整
+      if (document.body.classList.contains('dark-theme')) {
+        cancelBtn.style.background = '#374151';
+        cancelBtn.style.borderColor = '#4b5563';
+        cancelBtn.style.color = '#d1d5db';
+      }
+
+      // イベントリスナー
+      const handleCancel = () => {
+        document.body.removeChild(overlay);
+        resolve(false);
+      };
+
+      const handleDelete = () => {
+        document.body.removeChild(overlay);
+        resolve(true);
+      };
+
+      cancelBtn.addEventListener('click', handleCancel);
+      deleteBtn.addEventListener('click', handleDelete);
+
+      // Escapeキーでキャンセル
+      const handleKeydown = (e) => {
+        if (e.key === 'Escape') {
+          handleCancel();
+        } else if (e.key === 'Enter') {
+          // Enterキーはキャンセルボタンがフォーカスされている場合のみキャンセル
+          if (document.activeElement === cancelBtn) {
+            handleCancel();
+          } else {
+            handleDelete();
+          }
+        }
+      };
+
+      document.addEventListener('keydown', handleKeydown);
+
+      // オーバーレイクリックでキャンセル
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          handleCancel();
+        }
+      });
+
+      buttonContainer.appendChild(deleteBtn);
+      buttonContainer.appendChild(cancelBtn);
+      dialog.appendChild(messageEl);
+      dialog.appendChild(buttonContainer);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
+      // キャンセルボタンにフォーカス（デフォルト選択）
+      setTimeout(() => {
+        cancelBtn.focus();
+      }, 10);
+
+      // クリーンアップ関数を追加
+      const cleanup = () => {
+        document.removeEventListener('keydown', handleKeydown);
+      };
+
+      // Promise解決時にクリーンアップ
+      const originalResolve = resolve;
+      resolve = (value) => {
+        cleanup();
+        originalResolve(value);
+      };
+    });
+  }
+
   // closeTab関数を修正
   async function closeTab(tabId) {
     // タブIDを数値型に変換
     tabId = Number(tabId);
+
+    // 確認ダイアログを表示
+    const tabTitle = tabData[tabId]?.title || `Tab ${tabId}`;
+    const confirmMessage = `「${tabTitle}」を削除しますか？\n\n保存されていない変更は失われます。`;
+    
+    const confirmed = await showConfirmDialog(confirmMessage);
+    if (!confirmed) {
+      return; // キャンセルされた場合は何もしない
+    }
 
     // タブとエディタを削除
     const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
