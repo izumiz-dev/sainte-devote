@@ -28,10 +28,10 @@ if (isDev) {
 }
 
 const monacoSettings = {
-  width: 400,
-  height: 600,
-  minWidth: 400,
-  minHeight: 400,
+  width: 1000,
+  height: 700,
+  minWidth: 600,
+  minHeight: 500,
   webPreferences: {
     nodeIntegration: false,
     contextIsolation: true,

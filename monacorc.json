@@ -1,5 +1,5 @@
 {
-  "value": "// happy drafting",
+  "value": "",
   "language": "markdown",
   "theme": "vs-dark",
   "automaticLayout": true,
@@ -19,6 +19,9 @@
   "smoothScrolling": true,
   "renderLineHighlight": "all",
   "folding": false,
+  "stickyScroll": {
+    "enabled": false
+  },
   "suggestOnTriggerCharacters": false,
   "parameterHints": {
     "enabled": false
