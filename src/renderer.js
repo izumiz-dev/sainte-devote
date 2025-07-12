@@ -436,6 +436,189 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }, { passive: false });
 
+  // 右クリックメニューのグローバル変数
+  let contextMenu = null;
+  let contextMenuTabId = null;
+
+  // 右クリックメニューを作成
+  function createContextMenu(x, y, tabId) {
+    // 既存のメニューがあれば削除
+    if (contextMenu) {
+      document.body.removeChild(contextMenu);
+    }
+
+    contextMenu = document.createElement('div');
+    contextMenu.style.cssText = `
+      position: fixed;
+      left: ${x}px;
+      top: ${y}px;
+      background: white;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10000;
+      min-width: 180px;
+      padding: 4px 0;
+      font-size: 13px;
+    `;
+
+    // ダークテーマ対応
+    if (document.body.classList.contains('dark-theme')) {
+      contextMenu.style.background = '#1f2937';
+      contextMenu.style.borderColor = '#374151';
+      contextMenu.style.color = '#f9fafb';
+    }
+
+    const menuItems = [
+      {
+        text: 'クリップボードにコピー',
+        icon: '📋',
+        action: () => copyToClipboard(tabId)
+      },
+      {
+        text: 'Markdownとして保存',
+        icon: '💾',
+        action: () => saveAsMarkdown(tabId)
+      }
+    ];
+
+    menuItems.forEach(item => {
+      const menuItem = document.createElement('div');
+      menuItem.style.cssText = `
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background-color 0.15s ease;
+      `;
+
+      menuItem.innerHTML = `<span>${item.icon}</span><span>${item.text}</span>`;
+
+      menuItem.addEventListener('mouseenter', () => {
+        menuItem.style.backgroundColor = document.body.classList.contains('dark-theme') 
+          ? '#374151' : '#f3f4f6';
+      });
+
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.backgroundColor = 'transparent';
+      });
+
+      menuItem.addEventListener('click', () => {
+        item.action();
+        hideContextMenu();
+      });
+
+      contextMenu.appendChild(menuItem);
+    });
+
+    document.body.appendChild(contextMenu);
+    contextMenuTabId = tabId;
+
+    // ウィンドウの境界内に収める
+    const rect = contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+      contextMenu.style.left = `${x - rect.width}px`;
+    }
+    if (rect.bottom > window.innerHeight) {
+      contextMenu.style.top = `${y - rect.height}px`;
+    }
+  }
+
+  // 右クリックメニューを非表示
+  function hideContextMenu() {
+    if (contextMenu) {
+      document.body.removeChild(contextMenu);
+      contextMenu = null;
+      contextMenuTabId = null;
+    }
+  }
+
+  // クリップボードにコピー機能
+  async function copyToClipboard(tabId) {
+    try {
+      const content = editors[tabId]?.getValue() || '';
+      await navigator.clipboard.writeText(content);
+      showNotification('クリップボードにコピーしました');
+    } catch (error) {
+      console.error('クリップボードへのコピーに失敗:', error);
+      showNotification('コピーに失敗しました', 'error');
+    }
+  }
+
+  // Markdownとして保存機能
+  async function saveAsMarkdown(tabId) {
+    try {
+      const content = editors[tabId]?.getValue() || '';
+      const tabTitle = tabData[tabId]?.title || `Tab ${tabId}`;
+      const fileName = `${tabTitle}.md`;
+      
+      // Electronのファイル保存ダイアログを使用
+      window.electron.send('save-file', { content, fileName });
+    } catch (error) {
+      console.error('ファイル保存に失敗:', error);
+      showNotification('保存に失敗しました', 'error');
+    }
+  }
+
+  // 通知を表示
+  function showNotification(message, type = 'success') {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 50px;
+      right: 20px;
+      background: ${type === 'error' ? '#dc2626' : '#059669'};
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10001;
+      font-size: 14px;
+      transition: all 0.3s ease;
+      transform: translateX(100%);
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    // アニメーション
+    setTimeout(() => {
+      notification.style.transform = 'translateX(0)';
+    }, 10);
+
+    // 3秒後に削除
+    setTimeout(() => {
+      notification.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        if (document.body.contains(notification)) {
+          document.body.removeChild(notification);
+        }
+      }, 300);
+    }, 3000);
+  }
+
+  // 右クリックイベント
+  tabs.addEventListener('contextmenu', (event) => {
+    const tab = event.target.closest('.tab');
+    if (tab && tab.dataset.tab) {
+      event.preventDefault();
+      createContextMenu(event.clientX, event.clientY, tab.dataset.tab);
+    }
+  });
+
+  // メニューを非表示にするイベント
+  document.addEventListener('click', (event) => {
+    if (contextMenu && !contextMenu.contains(event.target)) {
+      hideContextMenu();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && contextMenu) {
+      hideContextMenu();
+    }
+  });
+
   tabs.addEventListener('click', (event) => {
     const target = event.target.closest('.tab, .close-tab-btn');
     if (!target) return;
@@ -767,6 +950,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       updateBodyTheme(monacoSettings.theme === 'vs-dark');
       initializeTabs();
     }
+  });
+
+  // ファイル保存結果の受信
+  window.electron.receive('save-file-success', (filePath) => {
+    const fileName = filePath.split('/').pop().split('\\').pop(); // クロスプラットフォーム対応
+    showNotification(`ファイルを保存しました: ${fileName}`);
+  });
+
+  window.electron.receive('save-file-error', (error) => {
+    showNotification(`保存に失敗しました: ${error}`, 'error');
   });
 
   window.addEventListener('resize', () => {

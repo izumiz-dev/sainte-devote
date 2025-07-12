@@ -3,7 +3,8 @@ const {
   BrowserWindow,
   nativeTheme,
   shell,
-  ipcMain
+  ipcMain,
+  dialog
 } = require('electron');
 
 const path = require('path');
@@ -104,4 +105,26 @@ app.on('before-quit', () => {
 // 新しいイベントリスナーを追加
 ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
+});
+
+// ファイル保存ダイアログ
+ipcMain.on('save-file', async (event, { content, fileName }) => {
+  try {
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Markdownファイルを保存',
+      defaultPath: fileName,
+      filters: [
+        { name: 'Markdown Files', extensions: ['md'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (!result.canceled && result.filePath) {
+      fs.writeFileSync(result.filePath, content, 'utf8');
+      event.reply('save-file-success', result.filePath);
+    }
+  } catch (error) {
+    console.error('File save error:', error);
+    event.reply('save-file-error', error.message);
+  }
 });
