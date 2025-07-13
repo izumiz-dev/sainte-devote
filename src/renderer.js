@@ -869,7 +869,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       cancelBtn.addEventListener('click', handleCancel);
       deleteBtn.addEventListener('click', handleDelete);
 
-      // Escapeキーでキャンセル
+      // キーボードナビゲーション対応
       const handleKeydown = (e) => {
         if (e.key === 'Escape') {
           handleCancel();
@@ -879,6 +879,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
             handleCancel();
           } else {
             handleDelete();
+          }
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          // 矢印キーでボタン間を移動
+          if (document.activeElement === deleteBtn) {
+            cancelBtn.focus();
+          } else {
+            deleteBtn.focus();
           }
         }
       };
