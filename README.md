@@ -1,5 +1,7 @@
 # Sainte Devote
 
+[日本語版 (Japanese)](README.ja.md)
+
 Sainte Devote is a multi-tab Markdown editor based on Monaco Editor, built with Electron for cross-platform use.
 
 https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92

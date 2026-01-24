@@ -1,5 +1,7 @@
 # Sainte Devote
 
+[English Version](README.md)
+
 Sainte Devote は、Monaco Editor をベースにしたマルチタブ型 Markdown エディタです。Electron を使用して構築されています。
 
 https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
