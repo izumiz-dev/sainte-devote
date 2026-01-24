@@ -1,5 +1,10 @@
 # AGENT.md
 
+**Note:** This project uses **Serena** for development tasks.
+*   **Tool Awareness:** Before starting, verify your available tools (e.g., via `get_current_config`) to understand your capabilities.
+*   **Context & Memories:** Use the `read_memory` tool to access project context (`.serena/memories/`) instead of manually reading files.
+*   **Specialized Tools:** Utilize Serena's specialized tools (e.g., `find_symbol`, `search_for_pattern`) rather than relying on raw `read_file` calls.
+
 This file provides guidance to AI agents when working with code in this repository.
 
 ## Project Overview
