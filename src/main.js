@@ -123,7 +123,7 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', sendMonacoSettings);
   win.loadFile(path.join(__dirname, '..', 'index.html'));
-  
+
   const isDark = nativeTheme.shouldUseDarkColors;
   win.webContents.send('theme-changed', isDark);
   win.setTitleBarOverlay({
@@ -152,7 +152,7 @@ function handleThemeChange() {
   if (win && !win.isDestroyed()) {
     const isDark = nativeTheme.shouldUseDarkColors;
     win.webContents.send('theme-changed', isDark);
-    
+
     win.setTitleBarOverlay({
       color: isDark ? '#111827' : '#f9fafb',
       symbolColor: isDark ? '#9ca3af' : '#374151',
@@ -192,12 +192,10 @@ app.on('before-quit', () => {
   nativeTheme.removeListener('updated', handleThemeChange);
 });
 
-// 新しいイベントリスナーを追加
 ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
 });
 
-// ファイル保存ダイアログ
 ipcMain.on('save-file', async (event, { content, fileName }) => {
   try {
     const result = await dialog.showSaveDialog(win, {
@@ -219,7 +217,6 @@ ipcMain.on('save-file', async (event, { content, fileName }) => {
   }
 });
 
-// Export all tabs as zip
 ipcMain.on('export-tabs-data', async (event, tabsData) => {
   try {
     const zip = new JSZip();

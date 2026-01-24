@@ -28,14 +28,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     search: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
     default: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
   };
-  const tabData = {}; // Stores tab information
+  const tabData = {};
   let draggedTab = null;
-  const markdownCache = {}; // Object to maintain markdown cache
+  const markdownCache = {};
 
-  const initializedEditors = new Set(); // Track editor initialization state
-  let tabHistory = []; // Stores tab history
+  const initializedEditors = new Set();
+  let tabHistory = [];
 
-  // IndexedDB Utilities
   const dbName = 'SainteDevoteDB';
   let db;
 
@@ -69,9 +68,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       const transaction = db.transaction(['tabs'], 'readwrite');
       const store = transaction.objectStore('tabs');
 
-      // Clear existing data
       store.clear().onsuccess = () => {
-        // Save current tab data
         Object.entries(tabData).forEach(([id, tab]) => {
           store.put({
             id: Number(id),
@@ -135,7 +132,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  // Function to delete tab data from IndexedDB
   function deleteTabDataIndexedDB(tabId) {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['tabs'], 'readwrite');
@@ -147,7 +143,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  // Function to delete content from IndexedDB
   function deleteEditorContentIndexedDB(tabId) {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['content'], 'readwrite');
@@ -160,7 +155,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function initializeEditor(settings, tabId) {
-    // Skip if already initialized or settings/tabId is invalid
     if (initializedEditors.has(tabId) || !settings || !tabId) return;
 
     const container = document.querySelector(`.editor[data-tab="${tabId}"]`);
@@ -169,7 +163,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       return;
     }
 
-    // Dispose and recreate if already exists
     if (editors[tabId]) {
       editors[tabId].dispose();
       delete editors[tabId];
@@ -207,7 +200,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
-  // Get next available tab ID (sequential starting from 1)
   function getNextAvailableTabId() {
     const existingIds = Object.keys(tabData).map(Number).sort((a, b) => a - b);
     for (let i = 1; i <= existingIds.length + 1; i++) {
@@ -218,22 +210,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     return 1;
   }
 
-  // Get display tab number (always sequential starting from 1)
   function getDisplayTabNumber(tabId) {
-    // Calculate number based on current tab order
     const orderedTabs = getTabsByOrder();
     const index = orderedTabs.findIndex(tab => tab.id === Number(tabId));
     return index >= 0 ? index + 1 : orderedTabs.length + 1;
   }
 
-  // Get tab position order
   function getTabsByOrder() {
     return Object.entries(tabData)
       .map(([id, data]) => ({ id: Number(id), ...data }))
       .sort((a, b) => (a.order || 0) - (b.order || 0));
   }
 
-  // Update tab order
   function updateTabOrder() {
     const tabs = document.querySelectorAll('.tab[data-tab]:not(.add-tab-btn)');
     tabs.forEach((tab, index) => {
@@ -245,7 +233,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     saveTabData();
   }
 
-  // Scroll to active tab
   function scrollToActiveTab(tabElement) {
     if (!tabElement) return;
 
@@ -253,14 +240,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const tabRect = tabElement.getBoundingClientRect();
     const containerRect = tabsContainer.getBoundingClientRect();
 
-    // If tab is outside left boundary
     if (tabRect.left < containerRect.left) {
-      const scrollAmount = tabRect.left - containerRect.left - 10; // 10px margin
+      const scrollAmount = tabRect.left - containerRect.left - 10;
       tabsContainer.scrollLeft += scrollAmount;
     }
-    // If tab is outside right boundary
     else if (tabRect.right > containerRect.right) {
-      const scrollAmount = tabRect.right - containerRect.right + 10; // 10px margin
+      const scrollAmount = tabRect.right - containerRect.right + 10;
       tabsContainer.scrollLeft += scrollAmount;
     }
   }
@@ -278,11 +263,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         'node_modules/github-markdown-css/github-markdown-light.css';
     }
 
-    // Update editor theme
     const newTheme = isDark ? 'vs-dark' : 'vs-light';
     monaco.editor.setTheme(newTheme);
 
-    // Update individual editor options
     Object.values(editors).forEach((editor) => {
       if (editor) {
         editor.updateOptions({ theme: newTheme });
@@ -291,7 +274,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function addTab(tabId = null, title = null, content = null) {
-    // Ensure tabId is a number
     if (tabId !== null) {
       tabId = Number(tabId);
       if (isNaN(tabId)) tabId = getNextAvailableTabId();
@@ -299,7 +281,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       tabId = getNextAvailableTabId();
     }
 
-    // Create tabData object first then set title
     const currentOrder = Object.keys(tabData).length;
     tabData[tabId] = {
       id: tabId,
@@ -317,12 +298,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     newTab.dataset.tab = tabId;
     newTab.draggable = true;
 
-    // Add title span
     const tabTitle = document.createElement('span');
     tabTitle.textContent = title;
     newTab.appendChild(tabTitle);
 
-    // Add close button
     const closeBtn = document.createElement('span');
     closeBtn.classList.add('close-tab-btn');
     closeBtn.textContent = '×';
@@ -340,7 +319,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     switchTab(tabId);
 
-    // Force initialize editor
     setTimeout(() => {
       initializeEditor(monacoSettings, tabId);
       const newTabElement = document.querySelector(`.tab[data-tab="${tabId}"]`);
@@ -351,11 +329,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function switchTab(tabId) {
-    // Convert tabId to number
     tabId = Number(tabId);
     if (isNaN(tabId)) return;
 
-    // Update active tab class
     if (activeTabElement) {
       activeTabElement.classList.remove('active');
     }
@@ -364,11 +340,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (newTab) {
       newTab.classList.add('active');
       activeTabElement = newTab;
-      // Scroll so active tab is visible
       scrollToActiveTab(newTab);
     }
 
-    // Hide previous tab
     if (currentTab) {
       const currentEditor = document.querySelector(
         `.editor[data-tab="${currentTab}"]`,
@@ -380,10 +354,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     currentTab = tabId;
 
-    // Initialize editor (regardless of mode)
     initializeEditor(monacoSettings, tabId);
 
-    // Show current tab based on mode
     if (isPreview) {
       const markdownContent = editors[currentTab]?.getValue() || '';
       const htmlContent = getMarkdownHtml(markdownContent, currentTab);
@@ -406,16 +378,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     }
 
-    // Update history: Clear existing ID and add to front
     tabHistory = [tabId, ...tabHistory.filter(id => id !== tabId)];
   }
 
   function getMarkdownHtml(content, tabId) {
-    // Return from cache if valid
     if (markdownCache[tabId] && markdownCache[tabId].content === content) {
       return markdownCache[tabId].html;
     }
-    // Parse and cache
     const html = marked.parse(content);
     markdownCache[tabId] = { content, html };
     return html;
@@ -449,7 +418,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     await openDatabase();
     await loadTabDataIndexedDB();
     if (Object.keys(tabData).length > 0) {
-      // Restore tabs in order
       const orderedTabs = getTabsByOrder();
       for (const tab of orderedTabs) {
         const content = await loadEditorContentIndexedDB(tab.id);
@@ -463,7 +431,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   function toggleTabBar() {
     document.body.classList.toggle('tabs-hidden');
 
-    // Adjust layout for all editors
     Object.values(editors).forEach((editor) => {
       if (editor) editor.layout();
     });
@@ -480,22 +447,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   addTabBtn.addEventListener('click', () => addTab());
 
-  // Horizontal scroll for tab area
   tabs.addEventListener('wheel', (event) => {
-    // Convert vertical scroll to horizontal
     if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
       event.preventDefault();
-      const scrollAmount = event.deltaY * 0.5; // Adjust scroll speed
+      const scrollAmount = event.deltaY * 0.5;
       tabs.scrollLeft += scrollAmount;
     }
   }, { passive: false });
 
-  // Global variable for context menu
   let contextMenu = null;
 
-  // Create right-click context menu
   function createContextMenu(x, y, tabId) {
-    // Remove existing menu if any
     if (contextMenu) {
       document.body.removeChild(contextMenu);
     }
@@ -515,7 +477,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       font-size: 13px;
     `;
 
-    // Dark theme support
     if (document.body.classList.contains('dark-theme')) {
       contextMenu.style.background = '#1f2937';
       contextMenu.style.borderColor = '#374151';
@@ -567,7 +528,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     document.body.appendChild(contextMenu);
 
-    // Keep within window boundaries
     const rect = contextMenu.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
       contextMenu.style.left = `${x - rect.width}px`;
@@ -577,7 +537,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
-  // Hide context menu
   function hideContextMenu() {
     if (contextMenu) {
       document.body.removeChild(contextMenu);
@@ -585,7 +544,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
-  // クリップボードにコピー機能
   async function copyToClipboard(tabId) {
     try {
       const content = editors[tabId]?.getValue() || '';
@@ -597,14 +555,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
-  // Save current tab as Markdown function
   async function saveAsMarkdown(tabId) {
     try {
       const content = editors[tabId]?.getValue() || '';
       const tabTitle = tabData[tabId]?.title || `Tab ${tabId}`;
       const fileName = `${tabTitle}.md`;
 
-      // Use Electron file save dialog
       window.electron.send('save-file', { content, fileName });
     } catch (error) {
       console.error('Failed to save file:', error);
@@ -612,7 +568,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
-  // Show notification
   function showNotification(message, type = 'success') {
     const notification = document.createElement('div');
     notification.style.cssText = `
@@ -632,12 +587,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     notification.textContent = message;
     document.body.appendChild(notification);
 
-    // Animation
     setTimeout(() => {
       notification.style.transform = 'translateX(0)';
     }, 10);
 
-    // Remove after 3 seconds
     setTimeout(() => {
       notification.style.transform = 'translateX(100%)';
       setTimeout(() => {
@@ -648,7 +601,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }, 3000);
   }
 
-  // Context menu event
   tabs.addEventListener('contextmenu', (event) => {
     const tab = event.target.closest('.tab');
     if (tab && tab.dataset.tab) {
@@ -657,7 +609,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Event to hide context menu
   document.addEventListener('click', (event) => {
     if (contextMenu && !contextMenu.contains(event.target)) {
       hideContextMenu();
@@ -665,36 +616,20 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   document.addEventListener('keydown', (event) => {
-    // Ctrl/Cmd + K for Command Palette
     if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
       event.preventDefault();
       showCommandPalette();
     }
 
-
-    // Escapeキーでコンテキストメニューを閉じる
     if (event.key === 'Escape' && contextMenu) {
       hideContextMenu();
     }
 
-    // Ctrl/Cmd + T で新しいタブを作成
     if ((event.ctrlKey || event.metaKey) && event.key === 't') {
       event.preventDefault();
       addTab();
     }
 
-    // Escape key to close context menu
-    if (event.key === 'Escape' && contextMenu) {
-      hideContextMenu();
-    }
-
-    // Ctrl/Cmd + T for New Tab
-    if ((event.ctrlKey || event.metaKey) && event.key === 't') {
-      event.preventDefault();
-      addTab();
-    }
-
-    // Ctrl/Cmd + W for Delete Tab
     if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
       event.preventDefault();
       if (currentTab) {
@@ -715,11 +650,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Middle-click (wheel click) to delete tab
   tabs.addEventListener('mousedown', (event) => {
-    // If middle-click
     if (event.button === 1) {
-      event.preventDefault(); // Prevent default middle-click behavior
+      event.preventDefault();
 
       const tab = event.target.closest('.tab');
       if (tab && tab.dataset.tab) {
@@ -729,7 +662,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Drag & drop event listeners
   tabs.addEventListener('dragstart', (event) => {
     if (event.target.classList.contains('tab') && event.target.dataset.tab) {
       draggedTab = event.target;
@@ -758,7 +690,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Calculate position of element during dragging
   function getDragAfterElement(container, x) {
     const draggableElements = [...container.querySelectorAll('.tab:not(.dragging):not(.add-tab-btn)')];
 
@@ -774,7 +705,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
   }
 
-  // Tab rename function
   function renameTab(tabId) {
     const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
     if (!tab) return;
@@ -782,12 +712,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const span = tab.querySelector('span');
     if (!span) return;
 
-    // Create input field for title editing
     const input = document.createElement('input');
     input.type = 'text';
     input.value = span.textContent;
 
-    // Style adjustments
     input.style.width = '100px';
     input.style.background = 'transparent';
     input.style.border = 'none';
@@ -816,7 +744,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     });
 
-    // Select entire input field
     input.focus();
     input.select();
   }
@@ -835,10 +762,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Create custom confirmation dialog
   function showConfirmDialog(message) {
     return new Promise((resolve) => {
-      // Create dialog container
       const overlay = document.createElement('div');
       overlay.style.cssText = `
         position: fixed;
@@ -865,7 +790,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         text-align: center;
       `;
 
-      // ダークテーマ対応
       if (document.body.classList.contains('dark-theme')) {
         dialog.style.background = '#1f2937';
         dialog.style.color = '#f9fafb';
@@ -912,14 +836,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         font-weight: 500;
       `;
 
-      // ダークテーマでのボタンスタイル調整
       if (document.body.classList.contains('dark-theme')) {
         cancelBtn.style.background = '#374151';
         cancelBtn.style.borderColor = '#4b5563';
         cancelBtn.style.color = '#d1d5db';
       }
 
-      // イベントリスナー
       const handleCancel = () => {
         document.body.removeChild(overlay);
         resolve(false);
@@ -933,19 +855,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       cancelBtn.addEventListener('click', handleCancel);
       deleteBtn.addEventListener('click', handleDelete);
 
-      // Keyboard navigation support
       const handleKeydown = (e) => {
         if (e.key === 'Escape') {
           handleCancel();
         } else if (e.key === 'Enter') {
-          // Enter cancels only if cancel button is focused
           if (document.activeElement === cancelBtn) {
             handleCancel();
           } else {
             handleDelete();
           }
         } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          // Move focus between buttons with arrow keys
           if (document.activeElement === deleteBtn) {
             cancelBtn.focus();
           } else {
@@ -956,7 +875,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
       document.addEventListener('keydown', handleKeydown);
 
-      // Cancel on clicking overlay
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
           handleCancel();
@@ -970,17 +888,14 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       overlay.appendChild(dialog);
       document.body.appendChild(overlay);
 
-      // Focus cancel button by default
       setTimeout(() => {
         cancelBtn.focus();
       }, 10);
 
-      // Add cleanup function
       const cleanup = () => {
         document.removeEventListener('keydown', handleKeydown);
       };
 
-      // Cleanup on Promise resolution
       const originalResolve = resolve;
       resolve = (value) => {
         cleanup();
@@ -989,28 +904,23 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  // Close tab function
   async function closeTab(tabId) {
-    // Convert tabId to number
     tabId = Number(tabId);
 
-    // Show confirmation dialog
     const tabTitle = tabData[tabId]?.title || `Tab ${tabId}`;
     const confirmMessage = `Are you sure you want to delete "${tabTitle}"?\n\nUnsaved changes will be lost.`;
 
     const confirmed = await showConfirmDialog(confirmMessage);
     if (!confirmed) {
-      return; // Do nothing if cancelled
+      return;
     }
 
-    // Delete tab and editor
     const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
     const editor = document.querySelector(`.editor[data-tab="${tabId}"]`);
 
     if (tab) tab.remove();
     if (editor) editor.remove();
 
-    // Dispose editor and delete data
     if (editors[tabId]) {
       editors[tabId].dispose();
       delete editors[tabId];
@@ -1018,23 +928,20 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     delete tabData[tabId];
     delete markdownCache[tabId];
 
-    // Delete data from IndexedDB
     try {
       await Promise.all([
         deleteTabDataIndexedDB(tabId),
         deleteEditorContentIndexedDB(tabId),
       ]);
-      await saveTabData(); // Save remaining tab data
+      await saveTabData();
     } catch (error) {
       console.error('Error deleting data from IndexedDB:', error);
     }
 
     initializedEditors.delete(tabId);
 
-    // Remove from history
     tabHistory = tabHistory.filter(id => id !== tabId);
 
-    // Process remaining tabs
     const remainingTabs = Object.keys(tabData);
     if (remainingTabs.length > 0) {
       switchTab(Number(remainingTabs[0]));
@@ -1044,7 +951,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       document.querySelectorAll('.editor').forEach((editor) => {
         editor.style.display = 'none';
       });
-      addTab(); // Create new tab if none left
+      addTab();
     }
   }
 
@@ -1058,7 +965,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   window.electron.receive('monaco-settings', (settings) => {
-    // Run only once
     if (!monacoSettings) {
       monacoSettings = settings;
       updateBodyTheme(monacoSettings.theme === 'vs-dark');
@@ -1066,9 +972,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Receive file save result
   window.electron.receive('save-file-success', (filePath) => {
-    const fileName = filePath.split('/').pop().split('\\').pop(); // Cross-platform support
+    const fileName = filePath.split('/').pop().split('\\').pop();
     showNotification(`File saved: ${fileName}`);
   });
 
@@ -1076,7 +981,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     showNotification(`Failed to save: ${error}`, 'error');
   });
 
-  // --- Command Palette Implementation ---
   const paletteOverlay = document.getElementById('command-palette-overlay');
   const paletteInput = document.getElementById('command-palette-input');
   const paletteResults = document.getElementById('command-palette-results');
@@ -1103,20 +1007,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const keywords = rawQuery.split(/\s+/).filter(k => k.length > 0);
     const results = [];
 
-    // Helper to check if text contains all keywords
     const isMatch = (text) => {
       if (keywords.length === 0) return true;
       const lowerText = text.toLowerCase();
       return keywords.every(k => lowerText.includes(k));
     };
 
-    // 1. Static Commands
     const staticCommands = [
       { id: 'new-tab', type: 'command', label: 'New Tab', detail: 'Create a new markdown tab', icon: icons.plus, action: () => addTab() },
       {
         id: 'delete-tab', type: 'command', label: 'Delete Tab', detail: 'Close and delete the current tab', icon: icons.trash, action: () => {
           if (currentTab) {
-            // Delay deletion slightly so the Enter key doesn't immediately confirm the dialog
             setTimeout(() => {
               closeTab(currentTab);
             }, 200);
@@ -1126,12 +1027,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       {
         id: 'rename-tab', type: 'command', label: 'Rename Current Tab Name', detail: 'Rename the current tab', icon: icons.pencil, action: () => {
           if (currentTab) {
-            // Signal that we are renaming so hideCommandPalette doesn't refocus the editor
             isRenaming = true;
             setTimeout(() => {
               renameTab(currentTab);
               isRenaming = false;
-            }, 300); // Increased delay for more stability
+            }, 300);
           }
         }
       },
@@ -1148,9 +1048,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     });
 
-    // 2. Tab Names
     if (keywords.length === 0) {
-      // Show Recently Opened (max 5, exclude current)
       const recentTabs = tabHistory.filter(id => id !== currentTab).slice(0, 5);
       recentTabs.forEach(id => {
         const data = tabData[id];
@@ -1166,7 +1064,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         }
       });
     } else {
-      // Search all tabs
       Object.entries(tabData).forEach(([id, data]) => {
         if (isMatch(data.title)) {
           results.push({
@@ -1181,7 +1078,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       });
     }
 
-    // 3. Full Text Search (if query is not empty)
     if (keywords.length > 0 && !(keywords.length === 1 && keywords[0].length < 2)) {
       for (const [id, data] of Object.entries(tabData)) {
         const tabId = Number(id);
@@ -1210,7 +1106,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
                     if (editor) {
                       const lineNum = index + 1;
                       editor.revealLineInCenter(lineNum);
-                      // Highlight the first keyword found
                       const firstKeyword = keywords[0];
                       editor.setPosition({ lineNumber: lineNum, column: line.toLowerCase().indexOf(firstKeyword) + 1 });
                       editor.focus();
@@ -1224,7 +1119,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     }
 
-    currentResults = results.slice(0, 15); // Show up to 15 results
+    currentResults = results.slice(0, 15);
     renderPaletteResults();
   }
 
@@ -1237,12 +1132,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       const div = document.createElement('div');
       div.className = `command-item ${index === selectedResultIndex ? 'selected' : ''}`;
 
-      // Icon container
       const icon = document.createElement('div');
       icon.className = 'command-icon';
       icon.innerHTML = result.icon || icons.default;
 
-      // Text container
       const content = document.createElement('div');
       content.className = 'command-content';
 
@@ -1330,18 +1223,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  // Export all tabs handler
   async function exportAllTabs() {
     const tabsToExport = [];
     const orderedTabs = getTabsByOrder();
 
     for (const tab of orderedTabs) {
       let content = '';
-      // If editor is initialized and valid, get value from it
       if (editors[tab.id] && editors[tab.id].getModel()) {
         content = editors[tab.id].getValue();
       } else {
-        // Otherwise load from DB
         try {
           content = await loadEditorContentIndexedDB(tab.id);
         } catch (e) {
@@ -1351,10 +1241,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
 
       let filename = (tab.title || `Tab ${tab.id}`).trim();
-      // Replace spaces with _
       filename = filename.replace(/\s+/g, '_');
-      // Sanitize filename (remove invalid chars for Windows/Mac/Linux)
-      // Invalid: \ / : * ? " < > |
       filename = filename.replace(/[\\/:*?"<>|]/g, '');
 
       if (!filename) filename = `Tab_${tab.id}`;
@@ -1362,7 +1249,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       let finalFilename = filename + '.md';
       let counter = 1;
 
-      // Ensure uniqueness
       while (tabsToExport.some(t => t.filename === finalFilename)) {
         finalFilename = `${filename}_${counter}.md`;
         counter++;
