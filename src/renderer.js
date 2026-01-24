@@ -67,6 +67,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     mangle: false,
     headerIds: false,
     renderer: renderer,
+    highlight: function (code, lang) {
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(code, { language: lang }).value;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      return code;
+    }
   });
 
   const editors = {};
@@ -316,9 +326,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (isDark) {
       markdownCssLink.href =
         'node_modules/github-markdown-css/github-markdown-dark.css';
+      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css';
     } else {
       markdownCssLink.href =
         'node_modules/github-markdown-css/github-markdown-light.css';
+      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github.min.css';
     }
 
     const newTheme = isDark ? 'vs-dark' : 'vs-light';
