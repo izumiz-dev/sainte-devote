@@ -403,10 +403,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     editorContainer.appendChild(newEditor);
     saveTabData();
 
+    if (isPreview) {
+      toggleMode();
+    }
+
     switchTab(tabId);
 
     setTimeout(() => {
       initializeEditor(monacoSettings, tabId);
+      if (editors[tabId]) {
+        editors[tabId].focus();
+      }
       const newTabElement = document.querySelector(`.tab[data-tab="${tabId}"]`);
       if (newTabElement) {
         scrollToActiveTab(newTabElement);
