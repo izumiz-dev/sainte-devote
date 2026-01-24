@@ -105,3 +105,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Serena MCP
+.serena/*
+
+!.serena/project.yml
+!.serena/memories/
