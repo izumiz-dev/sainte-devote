@@ -18,7 +18,8 @@
     "icon": "assets/icon.png",
     "mac": {
       "target": [
-        "zip"
+        "zip",
+        "dmg"
       ],
       "category": "public.app-category.utilities",
       "icon": "assets/icon.icns"
