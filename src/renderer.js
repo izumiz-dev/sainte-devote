@@ -1022,4 +1022,51 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       window.electron.send('open-external', event.target.href);
     }
   });
+
+  // Export all tabs handler
+  window.electron.onExportRequest(async () => {
+    const tabsToExport = [];
+    const orderedTabs = getTabsByOrder();
+
+    for (const tab of orderedTabs) {
+      let content = '';
+      // If editor is initialized and valid, get value from it
+      if (editors[tab.id] && editors[tab.id].getModel()) {
+        content = editors[tab.id].getValue();
+      } else {
+        // Otherwise load from DB
+        try {
+          content = await loadEditorContentIndexedDB(tab.id);
+        } catch (e) {
+          console.error(`Failed to load content for tab ${tab.id}`, e);
+          content = '';
+        }
+      }
+
+      let filename = (tab.title || `Tab ${tab.id}`).trim();
+      // Replace spaces with _
+      filename = filename.replace(/\s+/g, '_');
+      // Sanitize filename (remove invalid chars for Windows/Mac/Linux)
+      // Invalid: \ / : * ? " < > |
+      filename = filename.replace(/[\\/:*?"<>|]/g, '');
+      
+      if (!filename) filename = `Tab_${tab.id}`;
+      
+      let finalFilename = filename + '.md';
+      let counter = 1;
+      
+      // Ensure uniqueness
+      while (tabsToExport.some(t => t.filename === finalFilename)) {
+        finalFilename = `${filename}_${counter}.md`;
+        counter++;
+      }
+
+      tabsToExport.push({
+        filename: finalFilename,
+        content: content || ''
+      });
+    }
+
+    window.electron.sendExportData(tabsToExport);
+  });
 });

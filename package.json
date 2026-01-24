@@ -44,6 +44,7 @@
   "description": "Sainte devote is tiny monaco editor.",
   "dependencies": {
     "github-markdown-css": "^5.7.0",
+    "jszip": "^3.10.1",
     "marked": "^5.1.0",
     "monaco-editor": "^0.50.0"
   },

@@ -4,11 +4,13 @@ const {
   nativeTheme,
   shell,
   ipcMain,
-  dialog
+  dialog,
+  Menu
 } = require('electron');
 
 const path = require('path');
 const fs = require('fs');
+const JSZip = require('jszip');
 
 let win;
 
@@ -38,11 +40,81 @@ const monacoSettings = {
     contextIsolation: true,
     preload: path.join(__dirname, 'preload.js'),
   },
-  autoHideMenuBar: true,
+  autoHideMenuBar: false, // Changed to false to show the menu
 };
+
+function createMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Export All Tabs (.zip)',
+          accelerator: 'CmdOrCtrl+Shift+E',
+          click: () => {
+            if (win) {
+              win.webContents.send('request-export-all');
+            }
+          }
+        },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(process.platform === 'darwin'
+          ? [
+            { type: 'separator' },
+            { role: 'front' },
+            { type: 'separator' },
+            { role: 'window' }
+          ]
+          : [
+            { role: 'close' }
+          ])
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
 
 function createWindow() {
   win = new BrowserWindow(monacoSettings);
+  
+  createMenu();
+
   win.webContents.on('did-finish-load', sendMonacoSettings);
   win.loadFile(path.join(__dirname, '..', 'index.html'));
   win.webContents.send('theme-changed', nativeTheme.shouldUseDarkColors);
@@ -125,6 +197,42 @@ ipcMain.on('save-file', async (event, { content, fileName }) => {
     }
   } catch (error) {
     console.error('File save error:', error);
+    event.reply('save-file-error', error.message);
+  }
+});
+
+// Export all tabs as zip
+ipcMain.on('export-tabs-data', async (event, tabsData) => {
+  try {
+    const zip = new JSZip();
+
+    tabsData.forEach(tab => {
+      zip.file(tab.filename, tab.content);
+    });
+
+    const content = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const now = new Date();
+    const dateStr = now.getFullYear() +
+      String(now.getMonth() + 1).padStart(2, '0') +
+      String(now.getDate()).padStart(2, '0');
+    const defaultFileName = `sainte_devote_${dateStr}.zip`;
+
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save All Tabs as Zip',
+      defaultPath: defaultFileName,
+      filters: [
+        { name: 'Zip Files', extensions: ['zip'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (!result.canceled && result.filePath) {
+      fs.writeFileSync(result.filePath, content);
+      event.reply('save-file-success', result.filePath);
+    }
+  } catch (error) {
+    console.error('Zip export error:', error);
     event.reply('save-file-error', error.message);
   }
 });

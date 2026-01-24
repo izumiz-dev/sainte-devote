@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('electron', {
   send: (channel, ...args) => {
     ipcRenderer.send(channel, ...args);
   },
+  onExportRequest: (callback) => ipcRenderer.on('request-export-all', callback),
+  sendExportData: (data) => ipcRenderer.send('export-tabs-data', data),
 });
