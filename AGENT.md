@@ -2,8 +2,12 @@
 
 **Note:** This project uses **Serena** for development tasks.
 *   **Tool Awareness:** Before starting, verify your available tools (e.g., via `get_current_config`) to understand your capabilities.
-*   **Context & Memories:** Use the `read_memory` tool to access project context (`.serena/memories/`) instead of manually reading files.
-*   **Specialized Tools:** Utilize Serena's specialized tools (e.g., `find_symbol`, `search_for_pattern`) rather than relying on raw `read_file` calls.
+*   **Context & Memories:** 
+    *   **Read:** Use the `read_memory` tool to access project context (`.serena/memories/`) instead of manually reading files.
+    *   **Write:** When you learn important project details or establish new conventions, use the `write_memory` tool to save them for future sessions.
+*   **Specialized Tools:** Utilize Serena's specialized tools for both reading and writing:
+    *   **Analysis:** `find_symbol`, `search_for_pattern`, `get_symbols_overview` (avoid raw `read_file` where possible).
+    *   **Modification:** `replace`, `replace_symbol_body`, `rename_symbol` (avoid rewriting entire files with `write_file`).
 
 This file provides guidance to AI agents when working with code in this repository.
 

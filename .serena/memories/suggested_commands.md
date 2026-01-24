@@ -1,17 +1,14 @@
 # Suggested Commands
 
-**Development:**
-*   `npm start`: Start the application normally.
-*   `npm run dev`: Start in development mode with hot-reload (`electronmon`).
+*   `pnpm start`: Start the application normally.
+*   `pnpm dev`: Start in development mode with hot-reload (`electronmon`).
 
-**Quality Assurance:**
-*   `npm run lint`: Check for linting errors.
-*   `npm run lint:fix`: Fix auto-fixable linting errors.
+*   `pnpm lint`: Check for linting errors.
+*   `pnpm lint:fix`: Fix auto-fixable linting errors.
 
-**Building:**
-*   `npm run build`: Build for all platforms (configured in `package.json`).
-*   `npm run build:win`: Build for Windows.
-*   `npm run build:mac`: Build for macOS.
-*   `npm run build:linux`: Build for Linux.
+*   `pnpm build`: Build for all platforms (configured in `package.json`).
+*   `pnpm build:win`: Build for Windows.
+*   `pnpm build:mac`: Build for macOS.
+*   `pnpm build:linux`: Build for Linux.
 
-**Note:** The project contains `pnpm-lock.yaml`, so `pnpm` can be used instead of `npm` if available.
+**Note:** The project uses `pnpm` as its primary package manager.
