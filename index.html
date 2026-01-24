@@ -11,13 +11,18 @@
     />
   </head>
   <body>
-    <button id="mode-switch-btn">🔄️</button>
     <div id="tabs">
       <button class="add-tab-btn">＋</button>
     </div>
     <div id="editor-container">
     </div>
     <div id="preview" class="markdown-body"></div>
+    <div id="command-palette-overlay" class="hidden">
+      <div id="command-palette">
+        <input type="text" id="command-palette-input" placeholder="Type to search tabs, commands, or content..." spellcheck="false" autocomplete="off" />
+        <div id="command-palette-results"></div>
+      </div>
+    </div>
     <script>
       var require = {
         paths: {

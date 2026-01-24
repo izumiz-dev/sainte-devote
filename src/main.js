@@ -40,7 +40,7 @@ const monacoSettings = {
     contextIsolation: true,
     preload: path.join(__dirname, 'preload.js'),
   },
-  autoHideMenuBar: false, // Changed to false to show the menu
+  autoHideMenuBar: true,
 };
 
 function createMenu() {
@@ -112,7 +112,7 @@ function createMenu() {
 
 function createWindow() {
   win = new BrowserWindow(monacoSettings);
-  
+
   createMenu();
 
   win.webContents.on('did-finish-load', sendMonacoSettings);
