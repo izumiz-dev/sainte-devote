@@ -13,12 +13,12 @@ Sainte Devote は、シンプルな Monaco Editor ベースのテキストエデ
 
 1. このリポジトリをクローンします： `git clone git@github.com:izumiz-dev/sainte-devote.git`
 2. プロジェクトディレクトリに移動します： `cd sainte-devote`
-3. 依存関係をインストールします： `npm install`
+3. 依存関係をインストールします： `pnpm install`
 4. アプリケーションをビルドするには：
 
-- macOS: `npm run build:mac`
-- Windows: `npm run build:win`
-- Linux: `npm run build:linux`
+- macOS: `pnpm build:mac`
+- Windows: `pnpm build:win`
+- Linux: `pnpm build:linux`
 
 4. `dist`フォルダにビルド済みファイルが格納されます
 
