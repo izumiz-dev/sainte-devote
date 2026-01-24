@@ -45,7 +45,7 @@ const monacoSettings = {
   titleBarOverlay: {
     color: '#f9fafb',
     symbolColor: '#374151',
-    height: 38
+    height: 40
   }
 };
 

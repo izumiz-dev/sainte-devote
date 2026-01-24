@@ -22,16 +22,15 @@ body.light-theme {
   background-color: #ffffff;
 }
 
-/* タイトルバー */
 #titlebar {
-  height: 38px;
+  height: 40px;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   -webkit-app-region: drag;
   flex-shrink: 0;
-  background-color: #f9fafb; /* デフォルト背景 */
+  background-color: #f9fafb;
   position: relative;
 }
 
@@ -139,7 +138,7 @@ body.tabs-hidden #preview {
   min-height: 32px;
   flex-shrink: 0;
   scroll-behavior: smooth;
-  -webkit-app-region: no-drag; 
+  -webkit-app-region: no-drag;
 }
 
 #tabs::-webkit-scrollbar {
@@ -331,14 +330,11 @@ body.tabs-hidden #tabs {
   width: 100%;
 }
 
-body.tabs-hidden #editor-container {
-  /* top削除 */
-}
-
 .editor {
   width: 100%;
   height: 100%;
-  position: absolute; /* 親のeditor-containerに対して絶対配置 */
+  position: absolute;
+  /* 親のeditor-containerに対して絶対配置 */
   top: 0;
   left: 0;
   right: 0;
