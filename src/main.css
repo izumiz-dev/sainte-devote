@@ -564,7 +564,126 @@ body.tabs-hidden #tabs {
   color: #9ca3af;
 }
 
+
+
 .command-match {
   color: #3b82f6;
   font-weight: 700;
+}
+
+
+/* GFM Alerts */
+.markdown-alert {
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: 0.25em solid;
+}
+
+.markdown-alert p:empty {
+  display: none;
+}
+
+
+.markdown-alert> :first-child {
+  margin-top: 0;
+}
+
+.markdown-alert> :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.markdown-alert-title svg {
+  fill: currentColor;
+  margin-right: 8px;
+}
+
+/* Light Theme Colors */
+.markdown-alert-note {
+  border-color: #0969da;
+}
+
+.markdown-alert-note .markdown-alert-title {
+  color: #0969da;
+}
+
+.markdown-alert-tip {
+  border-color: #1a7f37;
+}
+
+.markdown-alert-tip .markdown-alert-title {
+  color: #1a7f37;
+}
+
+.markdown-alert-important {
+  border-color: #8250df;
+}
+
+.markdown-alert-important .markdown-alert-title {
+  color: #8250df;
+}
+
+.markdown-alert-warning {
+  border-color: #9a6700;
+}
+
+.markdown-alert-warning .markdown-alert-title {
+  color: #9a6700;
+}
+
+.markdown-alert-caution {
+  border-color: #d1242f;
+}
+
+.markdown-alert-caution .markdown-alert-title {
+  color: #d1242f;
+}
+
+/* Dark Theme Colors */
+.dark-theme .markdown-alert-note {
+  border-color: #2f81f7;
+}
+
+.dark-theme .markdown-alert-note .markdown-alert-title {
+  color: #2f81f7;
+}
+
+.dark-theme .markdown-alert-tip {
+  border-color: #3fb950;
+}
+
+.dark-theme .markdown-alert-tip .markdown-alert-title {
+  color: #3fb950;
+}
+
+.dark-theme .markdown-alert-important {
+  border-color: #a371f7;
+}
+
+.dark-theme .markdown-alert-important .markdown-alert-title {
+  color: #a371f7;
+}
+
+.dark-theme .markdown-alert-warning {
+  border-color: #d29922;
+}
+
+.dark-theme .markdown-alert-warning .markdown-alert-title {
+  color: #d29922;
+}
+
+.dark-theme .markdown-alert-caution {
+  border-color: #f85149;
+}
+
+.dark-theme .markdown-alert-caution .markdown-alert-title {
+  color: #f85149;
 }
