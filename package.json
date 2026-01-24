@@ -13,6 +13,7 @@
     "lint:fix": "eslint src/ --fix"
   },
   "build": {
+    "publish": null,
     "appId": "dev.izumiz.sainte-devote",
     "productName": "Sainte Devote",
     "icon": "assets/icon.png",
