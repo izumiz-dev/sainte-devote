@@ -1028,18 +1028,25 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     initializedEditors.delete(tabId);
 
-    tabHistory = tabHistory.filter(id => id !== tabId);
+    const wasCurrentTab = tabId === currentTab;
+    tabHistory = tabHistory.filter((id) => id !== tabId);
 
-    const remainingTabs = Object.keys(tabData);
-    if (remainingTabs.length > 0) {
-      switchTab(Number(remainingTabs[0]));
-    } else {
-      currentTab = null;
-      previewContainer.style.display = 'none';
-      document.querySelectorAll('.editor').forEach((editor) => {
-        editor.style.display = 'none';
-      });
-      addTab();
+    if (wasCurrentTab) {
+      if (tabHistory.length > 0) {
+        switchTab(tabHistory[0]);
+      } else {
+        const remainingTabs = Object.keys(tabData);
+        if (remainingTabs.length > 0) {
+          switchTab(Number(remainingTabs[0]));
+        } else {
+          currentTab = null;
+          previewContainer.style.display = 'none';
+          document.querySelectorAll('.editor').forEach((editor) => {
+            editor.style.display = 'none';
+          });
+          addTab();
+        }
+      }
     }
   }
 
