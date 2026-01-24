@@ -37,20 +37,11 @@ jobs:
       - name: Build (Windows)
         if: matrix.os == 'windows-latest'
         run: pnpm build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build (macOS)
         if: matrix.os == 'macos-latest'
         run: pnpm build:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup artifacts
-        run: |
-          rm -f dist/*.blockmap
-          rm -f dist/*.yml
-        shell: bash
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -58,6 +49,6 @@ jobs:
         with:
           files: |
             dist/*.dmg
-            dist/*-Setup-*.exe
+            dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
