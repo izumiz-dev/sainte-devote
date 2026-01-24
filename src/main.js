@@ -45,7 +45,7 @@ const monacoSettings = {
   titleBarOverlay: {
     color: '#f9fafb',
     symbolColor: '#374151',
-    height: 38
+    height: 40
   }
 };
 
@@ -126,10 +126,12 @@ function createWindow() {
 
   const isDark = nativeTheme.shouldUseDarkColors;
   win.webContents.send('theme-changed', isDark);
-  win.setTitleBarOverlay({
-    color: isDark ? '#111827' : '#f9fafb',
-    symbolColor: isDark ? '#9ca3af' : '#374151',
-  });
+  if (process.platform === 'win32') {
+    win.setTitleBarOverlay({
+      color: isDark ? '#111827' : '#f9fafb',
+      symbolColor: isDark ? '#9ca3af' : '#374151',
+    });
+  }
 
   win.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F12') {
@@ -152,11 +154,12 @@ function handleThemeChange() {
   if (win && !win.isDestroyed()) {
     const isDark = nativeTheme.shouldUseDarkColors;
     win.webContents.send('theme-changed', isDark);
-
-    win.setTitleBarOverlay({
-      color: isDark ? '#111827' : '#f9fafb',
-      symbolColor: isDark ? '#9ca3af' : '#374151',
-    });
+    if (process.platform === 'win32') {
+      win.setTitleBarOverlay({
+        color: isDark ? '#111827' : '#f9fafb',
+        symbolColor: isDark ? '#9ca3af' : '#374151',
+      });
+    }
   }
 }
 

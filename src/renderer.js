@@ -363,10 +363,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         previewContainer.innerHTML = htmlContent;
       }
       previewContainer.style.display = 'block';
-      const editorEl = document.querySelector(`.editor[data-tab="${tabId}"]`);
-      if (editorEl) editorEl.style.display = 'none';
+      const editorContainer = document.getElementById('editor-container');
+      if (editorContainer) editorContainer.style.display = 'none';
     } else {
       previewContainer.style.display = 'none';
+      const editorContainer = document.getElementById('editor-container');
+      if (editorContainer) editorContainer.style.display = 'block';
+
       const editorElement = document.querySelector(
         `.editor[data-tab="${tabId}"]`,
       );
@@ -392,16 +395,26 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   function toggleMode() {
     isPreview = !isPreview;
+
+    if (isPreview) {
+      document.body.classList.add('preview-mode');
+    } else {
+      document.body.classList.remove('preview-mode');
+    }
+
     if (currentTab) {
       if (isPreview) {
         const markdownContent = editors[currentTab]?.getValue() || '';
         const htmlContent = getMarkdownHtml(markdownContent, currentTab);
         previewContainer.innerHTML = htmlContent;
         previewContainer.style.display = 'block';
-        const editorEl = document.querySelector(`.editor[data-tab="${currentTab}"]`);
-        if (editorEl) editorEl.style.display = 'none';
+        const editorContainer = document.getElementById('editor-container');
+        if (editorContainer) editorContainer.style.display = 'none';
       } else {
         previewContainer.style.display = 'none';
+        const editorContainer = document.getElementById('editor-container');
+        if (editorContainer) editorContainer.style.display = 'block';
+
         const editorElement = document.querySelector(`.editor[data-tab="${currentTab}"]`);
         if (editorElement) {
           editorElement.style.display = 'block';
@@ -443,15 +456,39 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const tabs = document.getElementById('tabs');
   const addTabBtn = document.querySelector('.add-tab-btn');
   const previewContainer = document.getElementById('preview');
+  const modeToggleBtn = document.getElementById('mode-toggle-btn');
   let activeTabElement = document.querySelector('.tab.active');
 
   addTabBtn.addEventListener('click', () => addTab());
+  modeToggleBtn.addEventListener('click', () => toggleMode());
+
+  let scrollVelocity = 0;
+  let isScrolling = false;
+  const friction = 0.85;
+  const minVelocity = 0.5;
+
+  function animateScroll() {
+    if (Math.abs(scrollVelocity) > minVelocity) {
+      tabs.scrollLeft += scrollVelocity;
+      scrollVelocity *= friction;
+      requestAnimationFrame(animateScroll);
+    } else {
+      isScrolling = false;
+    }
+  }
 
   tabs.addEventListener('wheel', (event) => {
-    if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-      event.preventDefault();
-      const scrollAmount = event.deltaY * 0.5;
-      tabs.scrollLeft += scrollAmount;
+    event.preventDefault();
+
+    const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX)
+      ? event.deltaY
+      : event.deltaX;
+
+    scrollVelocity += delta * 0.8;
+
+    if (!isScrolling) {
+      isScrolling = true;
+      requestAnimationFrame(animateScroll);
     }
   }, { passive: false });
 
@@ -715,13 +752,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = span.textContent;
-
-    input.style.width = '100px';
-    input.style.background = 'transparent';
-    input.style.border = 'none';
-    input.style.outline = 'none';
-    input.style.color = 'inherit';
-    input.style.font = 'inherit';
 
     tab.replaceChild(input, span);
 

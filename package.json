@@ -64,5 +64,10 @@
     "eslint-plugin-prettier": "^5.2.1",
     "prettier": "^3.3.3",
     "wait-on": "^8.0.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   }
 }
