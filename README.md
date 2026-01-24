@@ -2,6 +2,11 @@
 
 Sainte Devote は、シンプルな Monaco Editor ベースのテキストエディタです。Electron を使用して構築されており、クロスプラットフォームで動作します。
 
+
+
+https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
+
+
 ## 特徴
 
 - シンプルで使いやすいインターフェース
