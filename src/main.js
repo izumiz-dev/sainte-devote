@@ -41,6 +41,12 @@ const monacoSettings = {
     preload: path.join(__dirname, 'preload.js'),
   },
   autoHideMenuBar: true,
+  titleBarStyle: 'hidden',
+  titleBarOverlay: {
+    color: '#f9fafb',
+    symbolColor: '#374151',
+    height: 38
+  }
 };
 
 function createMenu() {
@@ -117,7 +123,13 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', sendMonacoSettings);
   win.loadFile(path.join(__dirname, '..', 'index.html'));
-  win.webContents.send('theme-changed', nativeTheme.shouldUseDarkColors);
+  
+  const isDark = nativeTheme.shouldUseDarkColors;
+  win.webContents.send('theme-changed', isDark);
+  win.setTitleBarOverlay({
+    color: isDark ? '#111827' : '#f9fafb',
+    symbolColor: isDark ? '#9ca3af' : '#374151',
+  });
 
   win.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F12') {
@@ -138,7 +150,13 @@ function createWindow() {
 
 function handleThemeChange() {
   if (win && !win.isDestroyed()) {
-    win.webContents.send('theme-changed', nativeTheme.shouldUseDarkColors);
+    const isDark = nativeTheme.shouldUseDarkColors;
+    win.webContents.send('theme-changed', isDark);
+    
+    win.setTitleBarOverlay({
+      color: isDark ? '#111827' : '#f9fafb',
+      symbolColor: isDark ? '#9ca3af' : '#374151',
+    });
   }
 }
 

@@ -10,6 +10,8 @@ body {
 body {
   transition: background-color 0.3s ease;
   background-color: #f0f0f0;
+  display: flex;
+  flex-direction: column;
 }
 
 body.dark-theme {
@@ -20,56 +22,91 @@ body.light-theme {
   background-color: #ffffff;
 }
 
-#container {
+/* タイトルバー */
+#titlebar {
+  height: 38px;
   width: 100%;
-  height: 100vh;
-  overflow: hidden;
-  position: absolute;
-}
-
-#mode-switch-btn {
-  position: absolute;
-  bottom: 10px;
-  right: 24px;
-  z-index: 100;
-  width: 50px;
-  height: 50px;
-  background-color: #4e5d6d;
-  color: white;
-  border: none;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  background-color: #f9fafb; /* デフォルト背景 */
+  position: relative;
+}
+
+.dark-theme #titlebar {
+  background-color: #111827;
+}
+
+#command-palette-trigger {
+  width: 400px;
+  height: 26px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.3s ease;
-  font-size: 1.5rem;
-  text-align: center;
-  line-height: 50px;
+  -webkit-app-region: no-drag;
+  transition: all 0.2s;
+  gap: 8px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
 }
 
-#mode-switch-btn:hover {
-  background-color: #3b4a5a;
+.dark-theme #command-palette-trigger {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
 }
 
-#mode-switch-btn:active {
-  background-color: #2a3745;
+#command-palette-trigger:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme #command-palette-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+#command-palette-trigger .shortcut {
+  font-size: 10px;
+  padding: 1px 4px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.dark-theme #command-palette-trigger .shortcut {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+#container {
+  display: none;
+}
+
+#mode-switch-btn {
+  display: none;
 }
 
 #preview {
   display: none;
   width: 100%;
-  height: calc(100vh - 33px);
+  flex: 1;
   overflow: auto;
-  padding: 20px 20px 40px 20px;
+  padding: 20px;
   box-sizing: border-box;
-  position: absolute;
-  top: 33px;
 }
 
 body.tabs-hidden #preview {
-  top: 0;
-  height: 100vh;
+  display: block;
 }
 
 .markdown-light {
@@ -85,6 +122,7 @@ body.tabs-hidden #preview {
 .markdown-body {
   margin: auto;
   padding: 20px;
+  max-width: 900px;
 }
 
 #tabs {
@@ -101,6 +139,7 @@ body.tabs-hidden #preview {
   min-height: 32px;
   flex-shrink: 0;
   scroll-behavior: smooth;
+  -webkit-app-region: no-drag; 
 }
 
 #tabs::-webkit-scrollbar {
@@ -140,6 +179,7 @@ body.tabs-hidden #tabs {
   box-sizing: border-box;
   max-height: 32px;
   overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 
 .tab span:first-child {
@@ -241,6 +281,7 @@ body.tabs-hidden #tabs {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  -webkit-app-region: no-drag;
 }
 
 .dark-theme .add-tab-btn {
@@ -283,22 +324,21 @@ body.tabs-hidden #tabs {
 }
 
 #editor-container {
-  position: absolute;
-  top: 33px;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  /* position absolute 削除 */
+  position: relative;
+  flex: 1;
   overflow: hidden;
+  width: 100%;
 }
 
 body.tabs-hidden #editor-container {
-  top: 0;
+  /* top削除 */
 }
 
 .editor {
   width: 100%;
   height: 100%;
-  position: absolute;
+  position: absolute; /* 親のeditor-containerに対して絶対配置 */
   top: 0;
   left: 0;
   right: 0;
