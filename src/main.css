@@ -192,6 +192,35 @@ body.tabs-hidden #preview {
   max-width: 900px;
 }
 
+.markdown-body .task-list-item {
+  list-style-type: none !important;
+  padding-left: 0 !important;
+}
+
+.markdown-body li:has(input[type="checkbox"]) {
+  list-style-type: none !important;
+  padding-left: 0 !important;
+}
+
+.markdown-body .task-list-item-checkbox,
+.markdown-body li input[type="checkbox"] {
+  margin: 0 0.2em 0.25em -1.6em !important;
+  vertical-align: middle;
+  accent-color: #0969da;
+  transform: scale(1.25);
+}
+
+.dark-theme .markdown-body .task-list-item-checkbox,
+.dark-theme .markdown-body li input[type="checkbox"] {
+  accent-color: #2f81f7;
+}
+
+.markdown-body input[type="checkbox"]:disabled {
+  opacity: 0.8;
+  /* Slightly semi-transparent but still clearly colored */
+  cursor: default;
+}
+
 #tabs {
   display: flex;
   align-items: center;

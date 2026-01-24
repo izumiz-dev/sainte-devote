@@ -42,6 +42,27 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     return `<blockquote>${quote}</blockquote>`;
   };
 
+  let taskListIndex = 0;
+  // Reset index on each render
+  const originalParse = marked.parse;
+  marked.parse = function (src, options) {
+    taskListIndex = 0;
+    return originalParse.call(this, src, options);
+  };
+
+
+
+  renderer.checkbox = function (checked) {
+    return `<input type="checkbox" class="task-list-item-checkbox" ${checked ? 'checked' : ''} data-index="${taskListIndex++}"> `;
+  };
+
+  renderer.listitem = function (text, task, checked) {
+    if (task) {
+      return `<li class="task-list-item">${text}</li>`;
+    }
+    return `<li>${text}</li>`;
+  };
+
   marked.setOptions({
     mangle: false,
     headerIds: false,
@@ -1289,6 +1310,55 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       window.electron.send('open-external', event.target.href);
     }
   });
+
+  previewContainer.addEventListener('change', (event) => {
+    if (event.target.matches('input[type="checkbox"].task-list-item-checkbox')) {
+      const index = parseInt(event.target.getAttribute('data-index'), 10);
+      toggleTaskCheckbox(index, event.target.checked);
+    }
+  });
+
+  function toggleTaskCheckbox(index, isChecked) {
+    if (!currentTab || !editors[currentTab]) return;
+
+    const editor = editors[currentTab];
+    const originalValue = editor.getValue();
+    const regex = /^(\s*[-*+]\s+\[)([ xX])(\])/gm;
+
+    let match;
+    let matchIndex = 0;
+
+    while ((match = regex.exec(originalValue)) !== null) {
+      if (matchIndex === index) {
+        const start = match.index;
+        const prefix = match[1];
+        const newCheckChar = isChecked ? 'x' : ' ';
+
+        const range = new monaco.Range(
+          editor.getModel().getPositionAt(start + prefix.length).lineNumber,
+          editor.getModel().getPositionAt(start + prefix.length).column,
+          editor.getModel().getPositionAt(start + prefix.length + 1).lineNumber,
+          editor.getModel().getPositionAt(start + prefix.length + 1).column
+        );
+
+        editor.executeEdits('task-toggle', [{
+          range: range,
+          text: newCheckChar,
+          forceMoveMarkers: true
+        }]);
+
+        // Force preview update
+        const newValue = editor.getValue();
+        const htmlContent = getMarkdownHtml(newValue, currentTab);
+        if (previewContainer.innerHTML !== htmlContent) {
+          previewContainer.innerHTML = htmlContent;
+        }
+
+        break;
+      }
+      matchIndex++;
+    }
+  }
 
   async function exportAllTabs() {
     const tabsToExport = [];
