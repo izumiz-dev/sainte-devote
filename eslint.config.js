@@ -16,6 +16,13 @@ module.exports = [
         __dirname: 'readonly',
         __filename: 'readonly',
         module: 'readonly',
+        // Browser globals
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        navigator: 'readonly',
         // ES2024のグローバル
         Promise: 'readonly',
         Map: 'readonly',

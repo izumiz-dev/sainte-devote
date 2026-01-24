@@ -468,7 +468,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   // 右クリックメニューのグローバル変数
   let contextMenu = null;
-  let contextMenuTabId = null;
 
   // 右クリックメニューを作成
   function createContextMenu(x, y, tabId) {
@@ -543,7 +542,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
 
     document.body.appendChild(contextMenu);
-    contextMenuTabId = tabId;
 
     // ウィンドウの境界内に収める
     const rect = contextMenu.getBoundingClientRect();
@@ -560,7 +558,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (contextMenu) {
       document.body.removeChild(contextMenu);
       contextMenu = null;
-      contextMenuTabId = null;
     }
   }
 
@@ -962,7 +959,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       ]);
       await saveTabData(); // 残りのタブデータを保存
     } catch (error) {
-      // eslint-disable-next-line no-undef
       console.error('Error deleting data from IndexedDB:', error);
     }
 
