@@ -1,6 +1,6 @@
 {
   "name": "sainte-devote",
-  "version": "1.1.1",
+  "version": "1.4.0",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -45,7 +45,9 @@
   "license": "MIT",
   "description": "Sainte devote is tiny monaco editor.",
   "dependencies": {
+    "@highlightjs/cdn-assets": "^11.11.1",
     "github-markdown-css": "^5.7.0",
+    "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
     "marked": "^5.1.0",
     "monaco-editor": "^0.50.0",
@@ -55,8 +57,10 @@
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cross-env": "^7.0.3",
-    "electron": "^31.0.2",
-    "electron-builder": "^24.13.3",
+    "dmg-builder": "^25.1.8",
+    "electron": "^35.7.5",
+    "electron-builder": "^25.1.8",
+    "electron-builder-squirrel-windows": "^25.1.8",
     "electron-reload": "^2.0.0-alpha.1",
     "electronmon": "^2.0.3",
     "eslint": "^9.15.0",
@@ -64,5 +68,10 @@
     "eslint-plugin-prettier": "^5.2.1",
     "prettier": "^3.3.3",
     "wait-on": "^8.0.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   }
 }

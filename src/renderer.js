@@ -6,10 +6,94 @@ require.config({
 });
 
 require(['vs/editor/editor.main', 'marked'], function (_, marked) {
+  const renderer = new marked.Renderer();
+
+  // Alert icons
+  const alertIcons = {
+    note: '<svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 6.5 6.5A6.5 6.5 0 0 0 8 1.5ZM6.5 7.75A.75.75 0 0 1 7.25 7h1.5a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
+    tip: '<svg class="octicon octicon-light-bulb mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847-.209-.301-.471-.617-.705-.895l-.21-.249c-.655-.795-1.223-1.66-1.223-2.866 0-3.085 2.502-5.25 5.5-5.25s5.5 2.165 5.5 5.25c0 1.206-.568 2.071-1.223 2.866l-.21.249c-.234.278-.496.594-.705.895-.207.3-.33.565-.37.847a.75.75 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z"></path></svg>',
+    important: '<svg class="octicon octicon-report mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.75.75 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>',
+    warning: '<svg class="octicon octicon-alert mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>',
+    caution: '<svg class="octicon octicon-stop mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
+  };
+
+  renderer.blockquote = function (quote) {
+    const alertMatch = quote.match(/^<p>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+    if (alertMatch) {
+      const type = alertMatch[1].toLowerCase();
+      // Remove the [!TYPE] marker and following bracket/newline
+      // Note: marked renders > [!NOTE] as <p>[!NOTE]</p> or <p>[!NOTE] ...
+      // We'll replace the first occurrence of the marker.
+      const content = quote.replace(/^<p>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(<br>)?/i, '<p>');
+
+      const title = type.charAt(0).toUpperCase() + type.slice(1);
+      const icon = alertIcons[type] || '';
+
+      return `
+        <div class="markdown-alert markdown-alert-${type}">
+          <p class="markdown-alert-title">
+            ${icon}
+            ${title}
+          </p>
+          ${content}
+        </div>
+      `;
+    }
+    return `<blockquote>${quote}</blockquote>`;
+  };
+
+  let taskListIndex = 0;
+  // Reset index on each render
+  const originalParse = marked.parse;
+  marked.parse = function (src, options) {
+    taskListIndex = 0;
+    return originalParse.call(this, src, options);
+  };
+
+
+
+  renderer.checkbox = function (checked) {
+    return `<input type="checkbox" class="task-list-item-checkbox" ${checked ? 'checked' : ''} data-index="${taskListIndex++}"> `;
+  };
+
+  renderer.listitem = function (text, task, checked) {
+    if (task) {
+      return `<li class="task-list-item">${text}</li>`;
+    }
+    return `<li>${text}</li>`;
+  };
+
   marked.setOptions({
     mangle: false,
     headerIds: false,
+    renderer: renderer,
+    highlight: function (code, lang) {
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(code, { language: lang }).value;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      return code;
+    }
   });
+
+  renderer.code = function (code, lang) {
+    const highlighted = lang && hljs.getLanguage(lang)
+      ? hljs.highlight(code, { language: lang }).value
+      : code;
+
+    return `
+      <div class="code-block-wrapper">
+        <button class="copy-code-btn" title="Copy to clipboard">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="copy-feedback">Copied!</span>
+        </button>
+        <pre><code class="hljs ${lang || ''}">${highlighted}</code></pre>
+      </div>
+    `;
+  };
 
   const editors = {};
   let currentTab = null;
@@ -258,9 +342,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (isDark) {
       markdownCssLink.href =
         'node_modules/github-markdown-css/github-markdown-dark.css';
+      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css';
     } else {
       markdownCssLink.href =
         'node_modules/github-markdown-css/github-markdown-light.css';
+      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github.min.css';
     }
 
     const newTheme = isDark ? 'vs-dark' : 'vs-light';
@@ -317,10 +403,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     editorContainer.appendChild(newEditor);
     saveTabData();
 
+    if (isPreview) {
+      toggleMode();
+    }
+
     switchTab(tabId);
 
     setTimeout(() => {
       initializeEditor(monacoSettings, tabId);
+      if (editors[tabId]) {
+        editors[tabId].focus();
+      }
       const newTabElement = document.querySelector(`.tab[data-tab="${tabId}"]`);
       if (newTabElement) {
         scrollToActiveTab(newTabElement);
@@ -363,10 +456,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         previewContainer.innerHTML = htmlContent;
       }
       previewContainer.style.display = 'block';
-      const editorEl = document.querySelector(`.editor[data-tab="${tabId}"]`);
-      if (editorEl) editorEl.style.display = 'none';
+      const editorContainer = document.getElementById('editor-container');
+      if (editorContainer) editorContainer.style.display = 'none';
     } else {
       previewContainer.style.display = 'none';
+      const editorContainer = document.getElementById('editor-container');
+      if (editorContainer) editorContainer.style.display = 'block';
+
       const editorElement = document.querySelector(
         `.editor[data-tab="${tabId}"]`,
       );
@@ -392,16 +488,26 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   function toggleMode() {
     isPreview = !isPreview;
+
+    if (isPreview) {
+      document.body.classList.add('preview-mode');
+    } else {
+      document.body.classList.remove('preview-mode');
+    }
+
     if (currentTab) {
       if (isPreview) {
         const markdownContent = editors[currentTab]?.getValue() || '';
         const htmlContent = getMarkdownHtml(markdownContent, currentTab);
         previewContainer.innerHTML = htmlContent;
         previewContainer.style.display = 'block';
-        const editorEl = document.querySelector(`.editor[data-tab="${currentTab}"]`);
-        if (editorEl) editorEl.style.display = 'none';
+        const editorContainer = document.getElementById('editor-container');
+        if (editorContainer) editorContainer.style.display = 'none';
       } else {
         previewContainer.style.display = 'none';
+        const editorContainer = document.getElementById('editor-container');
+        if (editorContainer) editorContainer.style.display = 'block';
+
         const editorElement = document.querySelector(`.editor[data-tab="${currentTab}"]`);
         if (editorElement) {
           editorElement.style.display = 'block';
@@ -443,15 +549,39 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const tabs = document.getElementById('tabs');
   const addTabBtn = document.querySelector('.add-tab-btn');
   const previewContainer = document.getElementById('preview');
+  const modeToggleBtn = document.getElementById('mode-toggle-btn');
   let activeTabElement = document.querySelector('.tab.active');
 
   addTabBtn.addEventListener('click', () => addTab());
+  modeToggleBtn.addEventListener('click', () => toggleMode());
+
+  let scrollVelocity = 0;
+  let isScrolling = false;
+  const friction = 0.85;
+  const minVelocity = 0.5;
+
+  function animateScroll() {
+    if (Math.abs(scrollVelocity) > minVelocity) {
+      tabs.scrollLeft += scrollVelocity;
+      scrollVelocity *= friction;
+      requestAnimationFrame(animateScroll);
+    } else {
+      isScrolling = false;
+    }
+  }
 
   tabs.addEventListener('wheel', (event) => {
-    if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-      event.preventDefault();
-      const scrollAmount = event.deltaY * 0.5;
-      tabs.scrollLeft += scrollAmount;
+    event.preventDefault();
+
+    const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX)
+      ? event.deltaY
+      : event.deltaX;
+
+    scrollVelocity += delta * 0.8;
+
+    if (!isScrolling) {
+      isScrolling = true;
+      requestAnimationFrame(animateScroll);
     }
   }, { passive: false });
 
@@ -716,13 +846,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     input.type = 'text';
     input.value = span.textContent;
 
-    input.style.width = '100px';
-    input.style.background = 'transparent';
-    input.style.border = 'none';
-    input.style.outline = 'none';
-    input.style.color = 'inherit';
-    input.style.font = 'inherit';
-
     tab.replaceChild(input, span);
 
     input.addEventListener('blur', () => {
@@ -940,18 +1063,25 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     initializedEditors.delete(tabId);
 
-    tabHistory = tabHistory.filter(id => id !== tabId);
+    const wasCurrentTab = tabId === currentTab;
+    tabHistory = tabHistory.filter((id) => id !== tabId);
 
-    const remainingTabs = Object.keys(tabData);
-    if (remainingTabs.length > 0) {
-      switchTab(Number(remainingTabs[0]));
-    } else {
-      currentTab = null;
-      previewContainer.style.display = 'none';
-      document.querySelectorAll('.editor').forEach((editor) => {
-        editor.style.display = 'none';
-      });
-      addTab();
+    if (wasCurrentTab) {
+      if (tabHistory.length > 0) {
+        switchTab(tabHistory[0]);
+      } else {
+        const remainingTabs = Object.keys(tabData);
+        if (remainingTabs.length > 0) {
+          switchTab(Number(remainingTabs[0]));
+        } else {
+          currentTab = null;
+          previewContainer.style.display = 'none';
+          document.querySelectorAll('.editor').forEach((editor) => {
+            editor.style.display = 'none';
+          });
+          addTab();
+        }
+      }
     }
   }
 
@@ -1217,11 +1347,75 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   previewContainer.addEventListener('click', (event) => {
+    const copyBtn = event.target.closest('.copy-code-btn');
+    if (copyBtn) {
+      const codeElement = copyBtn.nextElementSibling.querySelector('code');
+      if (codeElement) {
+        const code = codeElement.innerText;
+        navigator.clipboard.writeText(code).then(() => {
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+          }, 2000);
+        });
+      }
+      return;
+    }
+
     if (event.target.tagName === 'A') {
       event.preventDefault();
       window.electron.send('open-external', event.target.href);
     }
   });
+
+  previewContainer.addEventListener('change', (event) => {
+    if (event.target.matches('input[type="checkbox"].task-list-item-checkbox')) {
+      const index = parseInt(event.target.getAttribute('data-index'), 10);
+      toggleTaskCheckbox(index, event.target.checked);
+    }
+  });
+
+  function toggleTaskCheckbox(index, isChecked) {
+    if (!currentTab || !editors[currentTab]) return;
+
+    const editor = editors[currentTab];
+    const originalValue = editor.getValue();
+    const regex = /^(\s*[-*+]\s+\[)([ xX])(\])/gm;
+
+    let match;
+    let matchIndex = 0;
+
+    while ((match = regex.exec(originalValue)) !== null) {
+      if (matchIndex === index) {
+        const start = match.index;
+        const prefix = match[1];
+        const newCheckChar = isChecked ? 'x' : ' ';
+
+        const range = new monaco.Range(
+          editor.getModel().getPositionAt(start + prefix.length).lineNumber,
+          editor.getModel().getPositionAt(start + prefix.length).column,
+          editor.getModel().getPositionAt(start + prefix.length + 1).lineNumber,
+          editor.getModel().getPositionAt(start + prefix.length + 1).column
+        );
+
+        editor.executeEdits('task-toggle', [{
+          range: range,
+          text: newCheckChar,
+          forceMoveMarkers: true
+        }]);
+
+        // Force preview update
+        const newValue = editor.getValue();
+        const htmlContent = getMarkdownHtml(newValue, currentTab);
+        if (previewContainer.innerHTML !== htmlContent) {
+          previewContainer.innerHTML = htmlContent;
+        }
+
+        break;
+      }
+      matchIndex++;
+    }
+  }
 
   async function exportAllTabs() {
     const tabsToExport = [];

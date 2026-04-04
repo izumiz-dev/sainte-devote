@@ -1,43 +1,58 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Sainte Devote</title>
-    <link rel="stylesheet" href="src/main.css" />
-    <link
-      id="github-markdown-css"
-      rel="stylesheet"
-      href="node_modules/github-markdown-css/github-markdown-light.css"
-    />
-  </head>
-  <body>
-    <div id="titlebar">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Sainte Devote</title>
+  <link rel="stylesheet" href="src/main.css" />
+  <link id="github-markdown-css" rel="stylesheet" href="node_modules/github-markdown-css/github-markdown-light.css" />
+  <link id="highlight-theme" rel="stylesheet" href="node_modules/@highlightjs/cdn-assets/styles/github.min.css" />
+</head>
+
+<body>
+  <div id="titlebar">
+    <div id="center-controls">
       <div id="command-palette-trigger">
         <span>Search tabs, commands or content...</span>
         <span class="shortcut">Ctrl+K</span>
       </div>
+      <button id="mode-toggle-btn" title="Toggle Preview/Editor">
+        <svg class="icon-edit" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+        </svg>
+        <svg class="icon-preview" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      </button>
     </div>
-    <div id="tabs">
-      <button class="add-tab-btn">＋</button>
+  </div>
+  <div id="tabs">
+    <button class="add-tab-btn">＋</button>
+  </div>
+  <div id="editor-container">
+  </div>
+  <div id="preview" class="markdown-body"></div>
+  <div id="command-palette-overlay" class="hidden">
+    <div id="command-palette">
+      <input type="text" id="command-palette-input" placeholder="Type to search tabs, commands, or content..."
+        spellcheck="false" autocomplete="off" />
+      <div id="command-palette-results"></div>
     </div>
-    <div id="editor-container">
-    </div>
-    <div id="preview" class="markdown-body"></div>
-    <div id="command-palette-overlay" class="hidden">
-      <div id="command-palette">
-        <input type="text" id="command-palette-input" placeholder="Type to search tabs, commands, or content..." spellcheck="false" autocomplete="off" />
-        <div id="command-palette-results"></div>
-      </div>
-    </div>
-    <script>
-      var require = {
-        paths: {
-          vs: "node_modules/monaco-editor/min/vs",
-          marked: "node_modules/marked/marked.min",
-        },
-      };
-    </script>
-    <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
-    <script src="src/renderer.js"></script>
-  </body>
+  </div>
+  <script>
+    var require = {
+      paths: {
+        vs: "node_modules/monaco-editor/min/vs",
+        marked: "node_modules/marked/marked.min",
+      },
+    };
+  </script>
+  <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
+  <script src="node_modules/@highlightjs/cdn-assets/highlight.min.js"></script>
+  <script src="src/renderer.js"></script>
+</body>
+
 </html>
