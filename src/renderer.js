@@ -1630,9 +1630,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       return;
     }
 
-    if (event.target.tagName === 'A') {
+    const link = event.target.closest('a');
+    if (link) {
       event.preventDefault();
-      window.electron.send('open-external', event.target.href);
+      window.electron.send('open-external', link.href);
     }
   });
 

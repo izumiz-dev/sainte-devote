@@ -149,6 +149,16 @@ function createWindow() {
 
   createMenu();
 
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    openExternalSafely(url);
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalSafely(url);
+    return { action: 'deny' };
+  });
+
   win.webContents.on('did-finish-load', sendMonacoSettings);
   win.loadFile(path.join(__dirname, '..', 'index.html'));
 
@@ -165,11 +175,6 @@ function createWindow() {
 
   win.on('closed', () => {
     win = null;
-  });
-
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    openExternalSafely(url);
-    return { action: 'deny' };
   });
 }
 
