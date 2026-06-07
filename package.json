@@ -69,6 +69,11 @@
     "prettier": "^3.3.3",
     "wait-on": "^8.0.1"
   },
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron"
