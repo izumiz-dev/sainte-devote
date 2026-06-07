@@ -229,10 +229,10 @@ body.tabs-hidden #preview {
 
 #tabs {
   display: flex;
-  align-items: center;
-  padding: 4px;
-  gap: 8px;
-  background: transparent;
+  align-items: flex-end;
+  padding: 0;
+  gap: 0;
+  background: #e7e9ed;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -254,23 +254,26 @@ body.tabs-hidden #tabs {
 }
 
 .dark-theme #tabs {
-  background: transparent;
+  background: #14171c;
 }
 
 .tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 4px 0 12px;
-  height: 32px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: #6b7280;
+  padding: 0 10px 0 14px;
+  height: 34px;
+  background: transparent;
+  border: none;
+  border-radius: 7px 7px 0 0;
+  color: #5b626d;
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.005em;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.16s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.16s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
   position: relative;
   min-width: 160px;
@@ -280,64 +283,99 @@ body.tabs-hidden #tabs {
   -webkit-app-region: no-drag;
 }
 
+/* Vertical divider between tabs (Windows Terminal style) */
+.tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.14);
+  opacity: 1;
+  transition: opacity 0.16s ease;
+  pointer-events: none;
+}
+
+.dark-theme .tab::before {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Hide the divider next to the first tab, and on both sides of the
+   active or hovered tab — matching Windows Terminal behaviour. */
+.tab:first-child::before,
+.tab.active::before,
+.tab.active + .tab::before,
+.tab:hover::before,
+.tab:hover + .tab::before {
+  opacity: 0;
+}
+
 .tab span:first-child {
   flex: 1;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-right: 4px;
+  margin-right: 2px;
 }
 
 .dark-theme .tab {
-  background: rgba(255, 255, 255, 0.05);
-  color: #9ca3af;
+  color: #9aa1ad;
 }
 
 .tab:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.05);
   color: #1f2937;
 }
 
 .dark-theme .tab:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f3f4f6;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
 }
 
+/* Active tab: a card that merges seamlessly into the editor below.
+   Its fill matches the Monaco background (#fff / #1e1e1e), and a
+   subtle top highlight gives it depth without a visible bottom edge. */
 .tab.active {
   background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
   color: #111827;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 -1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .dark-theme .tab.active {
-  background: #374151;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #f9fafb;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  background: #1e1e1e;
+  color: #f3f4f6;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 -1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .tab.active:hover {
   background: #ffffff;
+  color: #111827;
 }
 
 .dark-theme .tab.active:hover {
-  background: #374151;
+  background: #1e1e1e;
+  color: #f3f4f6;
 }
 
 .close-tab-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   font-size: 0;
   line-height: 1;
   opacity: 0;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 6px;
+  transition:
+    opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 5px;
   flex-shrink: 0;
   color: inherit;
   position: relative;
@@ -348,12 +386,11 @@ body.tabs-hidden #tabs {
 .close-tab-btn::after {
   content: '';
   position: absolute;
-  width: 12px;
-  height: 1px;
-  /* 細く */
+  width: 10px;
+  height: 1.25px;
   background-color: currentColor;
   border-radius: 1px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .close-tab-btn::before {
@@ -366,63 +403,75 @@ body.tabs-hidden #tabs {
 
 .tab:hover .close-tab-btn,
 .tab.active .close-tab-btn {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .close-tab-btn:hover {
   opacity: 1 !important;
-  background-color: rgba(0, 0, 0, 0.05);
-  transform: none !important;
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .dark-theme .close-tab-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 .close-tab-btn:active {
-  background-color: rgba(0, 0, 0, 0.1);
-  transform: none !important;
+  background-color: rgba(0, 0, 0, 0.14);
+}
+
+.dark-theme .close-tab-btn:active {
+  background-color: rgba(255, 255, 255, 0.18);
 }
 
 .add-tab-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  margin-left: 4px;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 4px 0 6px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 7px;
   color: #6b7280;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 400;
   cursor: pointer;
-  transition: all 0.2s ease;
+  flex-shrink: 0;
+  transition:
+    background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-app-region: no-drag;
 }
 
+.add-tab-btn::before {
+  display: none;
+}
+
 .dark-theme .add-tab-btn {
-  color: #9ca3af;
+  color: #8b929e;
 }
 
 .add-tab-btn:hover {
   background: rgba(0, 0, 0, 0.05);
-  color: #1f2937;
+  color: #374151;
 }
 
 .dark-theme .add-tab-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f3f4f6;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
 }
 
 .tab input {
   background: transparent;
-  border: 1px solid rgba(59, 130, 246, 0.5);
-  border-radius: 4px;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  border-radius: 5px;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
   color: inherit;
   font-size: inherit;
-  padding: 0 4px;
+  font-weight: inherit;
+  padding: 1px 5px;
   margin: 0;
   width: 100px;
   outline: none;
@@ -430,22 +479,26 @@ body.tabs-hidden #tabs {
 
 .tab.dragging {
   opacity: 1;
-  transform: scale(1.05) translateY(-2px);
+  border-radius: 7px;
   box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.15),
-    0 4px 8px rgba(0, 0, 0, 0.1);
+    0 8px 20px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.1);
   z-index: 1000;
   cursor: grabbing;
-  border-color: rgba(59, 130, 246, 0.4);
   background: #ffffff;
+  color: #111827;
+}
+
+.tab.dragging::before {
+  opacity: 0;
 }
 
 .dark-theme .tab.dragging {
   box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.4),
-    0 4px 8px rgba(0, 0, 0, 0.3);
-  border-color: rgba(96, 165, 250, 0.4);
-  background: #4b5563;
+    0 8px 20px rgba(0, 0, 0, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+  background: #2a2a2a;
+  color: #f3f4f6;
 }
 
 #editor-container {
