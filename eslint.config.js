@@ -23,6 +23,10 @@ module.exports = [
         setInterval: 'readonly',
         clearInterval: 'readonly',
         navigator: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+        // highlight.js (CDNでグローバル読み込み)
+        hljs: 'readonly',
         // ES2024のグローバル
         Promise: 'readonly',
         Map: 'readonly',

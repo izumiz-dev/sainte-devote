@@ -56,7 +56,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     return `<input type="checkbox" class="task-list-item-checkbox" ${checked ? 'checked' : ''} data-index="${taskListIndex++}"> `;
   };
 
-  renderer.listitem = function (text, task, checked) {
+  renderer.listitem = function (text, task) {
     if (task) {
       return `<li class="task-list-item">${text}</li>`;
     }
