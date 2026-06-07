@@ -16,6 +16,25 @@ let win;
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Only open external URLs with a safe, expected protocol. shell.openExternal
+// can launch local files / handlers (e.g. file://, UNC paths) which a
+// compromised renderer could abuse, so restrict it to web/mail links.
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
+function openExternalSafely(url) {
+  if (typeof url !== 'string') return;
+  try {
+    const { protocol } = new URL(url);
+    if (ALLOWED_EXTERNAL_PROTOCOLS.has(protocol)) {
+      shell.openExternal(url);
+    } else {
+      console.warn(`Blocked openExternal for disallowed protocol: ${protocol}`);
+    }
+  } catch {
+    console.warn(`Blocked openExternal for invalid URL: ${url}`);
+  }
+}
+
 if (isDev) {
   require('electron-reload')(__dirname, {
     electron: require('path').join(
@@ -149,7 +168,7 @@ function createWindow() {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
   });
 }
@@ -195,7 +214,7 @@ app.on('before-quit', () => {
 });
 
 ipcMain.on('open-external', (event, url) => {
-  shell.openExternal(url);
+  openExternalSafely(url);
 });
 
 // The renderer owns the effective theme (system / light / dark override),

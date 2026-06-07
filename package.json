@@ -46,6 +46,7 @@
   "description": "Sainte devote is tiny monaco editor.",
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
+    "dompurify": "^3.4.8",
     "github-markdown-css": "^5.7.0",
     "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",

@@ -26,8 +26,12 @@ module.exports = [
         localStorage: 'readonly',
         requestAnimationFrame: 'readonly',
         cancelAnimationFrame: 'readonly',
+        URL: 'readonly',
+        indexedDB: 'readonly',
         // highlight.js (CDNでグローバル読み込み)
         hljs: 'readonly',
+        // DOMPurify (scriptタグでグローバル読み込み)
+        DOMPurify: 'readonly',
         // ES2024のグローバル
         Promise: 'readonly',
         Map: 'readonly',

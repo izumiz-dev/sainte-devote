@@ -90,6 +90,10 @@
       </div>
     </div>
   </div>
+  <!-- Load DOMPurify before Monaco's AMD loader so its UMD build attaches to
+       window instead of registering an anonymous AMD module (which collides
+       with marked's anonymous define under the AMD loader). -->
+  <script src="node_modules/dompurify/dist/purify.min.js"></script>
   <script>
     var require = {
       paths: {
