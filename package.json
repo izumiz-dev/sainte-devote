@@ -23,7 +23,8 @@
         "dmg"
       ],
       "category": "public.app-category.utilities",
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "minimumSystemVersion": "12.0"
     },
     "win": {
       "target": [
@@ -58,10 +59,9 @@
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cross-env": "^7.0.3",
-    "dmg-builder": "^25.1.8",
-    "electron": "^35.7.5",
-    "electron-builder": "^25.1.8",
-    "electron-builder-squirrel-windows": "^25.1.8",
+    "dmg-builder": "^26.15.0",
+    "electron": "^42.3.3",
+    "electron-builder": "^26.15.0",
     "electron-reload": "^2.0.0-alpha.1",
     "electronmon": "^2.0.3",
     "eslint": "^9.15.0",

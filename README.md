@@ -47,6 +47,8 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
 -   **Windows**: `pnpm build:win`
 -   **Linux**: `pnpm build:linux`
 
+The macOS build requires macOS 12 or later.
+
 Build files are generated in the `dist` folder.
 
 ## Configuration

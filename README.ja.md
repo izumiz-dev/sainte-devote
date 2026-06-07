@@ -49,6 +49,8 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
 -   **Windows**: `pnpm build:win`
 -   **Linux**: `pnpm build:linux`
 
+macOS版の動作要件はmacOS 12以降です。
+
 ビルド済みファイルは `dist` フォルダに出力されます。
 
 ## 設定
