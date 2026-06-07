@@ -8,7 +8,7 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
 
 ## Features
 
--   **Command Palette (`Cmd/Ctrl + K`)**: Provides access to editor commands, tab switching, and keyword search across all open tabs.
+-   **Command Palette (`Cmd/Ctrl + P`)**: Provides access to editor commands, tab switching, and keyword search across all open tabs.
 -   **Syntax Highlighting**: 
     -   **Editor**: Integrated Monaco Editor for Markdown and code editing.
     -   **Preview**: Code block highlighting using `highlight.js`.

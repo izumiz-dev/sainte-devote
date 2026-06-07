@@ -274,10 +274,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         }
       });
 
-      editors[tabId].addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
-        showCommandPalette();
-      });
-
       initializedEditors.add(tabId);
     } catch (error) {
       console.error(`Failed to initialize editor for tab ${tabId}:`, error);
@@ -746,8 +742,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   document.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'p') {
       event.preventDefault();
+      event.stopPropagation();
       showCommandPalette();
     }
 
@@ -1332,7 +1329,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const shortcutSpan = commandPaletteTrigger.querySelector('.shortcut');
     if (shortcutSpan && isMac) {
-      shortcutSpan.textContent = 'Cmd+K';
+      shortcutSpan.textContent = 'Cmd+P';
     }
 
     commandPaletteTrigger.addEventListener('click', () => {
