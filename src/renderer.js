@@ -8,6 +8,17 @@ require.config({
 require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const renderer = new marked.Renderer();
 
+  // Escape HTML so that code (or any untrusted text) is rendered as literal
+  // text rather than parsed as markup when inserted via innerHTML.
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   // Alert icons
   const alertIcons = {
     note: '<svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 6.5 6.5A6.5 6.5 0 0 0 8 1.5ZM6.5 7.75A.75.75 0 0 1 7.25 7h1.5a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
@@ -75,14 +86,14 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           console.error(e);
         }
       }
-      return code;
+      return escapeHtml(code);
     }
   });
 
   renderer.code = function (code, lang) {
     const highlighted = lang && hljs.getLanguage(lang)
       ? hljs.highlight(code, { language: lang }).value
-      : code;
+      : escapeHtml(code);
 
     return `
       <div class="code-block-wrapper">
@@ -481,7 +492,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (markdownCache[tabId] && markdownCache[tabId].content === content) {
       return markdownCache[tabId].html;
     }
-    const html = marked.parse(content);
+    const html = DOMPurify.sanitize(marked.parse(content));
     markdownCache[tabId] = { content, html };
     return html;
   }
