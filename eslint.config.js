@@ -23,6 +23,7 @@ module.exports = [
         setInterval: 'readonly',
         clearInterval: 'readonly',
         navigator: 'readonly',
+        localStorage: 'readonly',
         requestAnimationFrame: 'readonly',
         cancelAnimationFrame: 'readonly',
         // highlight.js (CDNでグローバル読み込み)

@@ -22,7 +22,8 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
     -   Context menu for tab operations.
     -   Toggle between Editor and Preview modes.
 -   **Title Bar**: Frameless title bar with native window controls and search access.
--   **Theming**: Support for system-wide light and dark modes.
+-   **Settings (`Cmd/Ctrl + ,`)**: Customize the editor font and the preview font (family and size), plus the theme. Open it from the gear icon, the command palette (`Open Settings`), or the shortcut.
+-   **Theming**: Choose **System**, **Light**, or **Dark**. System mode follows the OS setting; Light/Dark force a fixed theme. Switchable from Settings or the command palette (`Theme: Use System / Light / Dark`).
 
 ## Installation
 

@@ -116,6 +116,15 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
+function applyTitleBarOverlay(isDark) {
+  if (process.platform === 'win32' && win && !win.isDestroyed()) {
+    win.setTitleBarOverlay({
+      color: isDark ? '#111827' : '#f9fafb',
+      symbolColor: isDark ? '#9ca3af' : '#374151',
+    });
+  }
+}
+
 function createWindow() {
   win = new BrowserWindow(monacoSettings);
 
@@ -126,12 +135,7 @@ function createWindow() {
 
   const isDark = nativeTheme.shouldUseDarkColors;
   win.webContents.send('theme-changed', isDark);
-  if (process.platform === 'win32') {
-    win.setTitleBarOverlay({
-      color: isDark ? '#111827' : '#f9fafb',
-      symbolColor: isDark ? '#9ca3af' : '#374151',
-    });
-  }
+  applyTitleBarOverlay(isDark);
 
   win.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F12') {
@@ -154,12 +158,7 @@ function handleThemeChange() {
   if (win && !win.isDestroyed()) {
     const isDark = nativeTheme.shouldUseDarkColors;
     win.webContents.send('theme-changed', isDark);
-    if (process.platform === 'win32') {
-      win.setTitleBarOverlay({
-        color: isDark ? '#111827' : '#f9fafb',
-        symbolColor: isDark ? '#9ca3af' : '#374151',
-      });
-    }
+    applyTitleBarOverlay(isDark);
   }
 }
 
@@ -197,6 +196,12 @@ app.on('before-quit', () => {
 
 ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
+});
+
+// The renderer owns the effective theme (system / light / dark override),
+// so it tells the main process which titlebar overlay colors to apply.
+ipcMain.on('set-title-bar-theme', (event, isDark) => {
+  applyTitleBarOverlay(isDark);
 });
 
 ipcMain.on('save-file', async (event, { content, fileName }) => {

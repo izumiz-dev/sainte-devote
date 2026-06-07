@@ -110,6 +110,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     eye: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
     file: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>',
     search: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
+    settings: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
+    monitor: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>',
+    sun: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',
+    moon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
     default: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
   };
   const tabData = {};
@@ -748,6 +752,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       showCommandPalette();
     }
 
+    if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+      event.preventDefault();
+      event.stopPropagation();
+      showSettings();
+    }
+
+    if (event.key === 'Escape' && !settingsOverlay.classList.contains('hidden')) {
+      hideSettings();
+    }
+
     if (event.key === 'Escape' && contextMenu) {
       hideContextMenu();
     }
@@ -1084,17 +1098,259 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   previewContainer.style.display = 'none';
 
-  window.electron.receive('theme-changed', (isDark) => {
+  // ---------------------------------------------------------------------------
+  // User settings (theme + fonts), persisted in localStorage.
+  // ---------------------------------------------------------------------------
+  const SETTINGS_KEY = 'sainteDevoteSettings';
+  const defaultSettings = {
+    theme: 'system', // 'system' | 'light' | 'dark'
+    editorFontFamily: '', // '' = use monacorc.json default
+    editorFontSize: 0, // 0 = use monacorc.json default
+    previewFontFamily: '', // '' = use github-markdown-css default
+    previewFontSize: 0, // 0 = use github-markdown-css default
+  };
+
+  // Curated font presets. value '' means "use the built-in default".
+  const FONT_PRESETS = {
+    editor: [
+      { label: 'Default', value: '' },
+      { label: 'Menlo', value: 'Menlo, monospace' },
+      { label: 'Cascadia Code', value: '\'Cascadia Code\', monospace' },
+      { label: 'Fira Code', value: '\'Fira Code\', monospace' },
+      { label: 'JetBrains Mono', value: '\'JetBrains Mono\', monospace' },
+      { label: 'Source Code Pro', value: '\'Source Code Pro\', monospace' },
+      { label: 'Consolas', value: 'Consolas, monospace' },
+      { label: 'monospace', value: 'monospace' },
+    ],
+    preview: [
+      { label: 'Default (GitHub)', value: '' },
+      { label: 'System UI', value: 'system-ui, -apple-system, sans-serif' },
+      { label: 'Hiragino Kaku Gothic ProN', value: '\'Hiragino Kaku Gothic ProN\', sans-serif' },
+      { label: 'Noto Sans JP', value: '\'Noto Sans JP\', sans-serif' },
+      { label: 'Yu Gothic', value: '\'Yu Gothic\', YuGothic, sans-serif' },
+      { label: 'Meiryo', value: 'Meiryo, sans-serif' },
+      { label: 'Georgia (serif)', value: 'Georgia, serif' },
+      { label: 'Arial', value: 'Arial, sans-serif' },
+    ],
+  };
+
+  function loadSettings() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      return { ...defaultSettings, ...stored };
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+      return { ...defaultSettings };
+    }
+  }
+
+  function saveSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(userSettings));
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
+  }
+
+  let userSettings = loadSettings();
+  let baseEditorFont = null; // captured from monacorc.json on first load
+  let systemIsDark = false;
+
+  function getEffectiveIsDark() {
+    if (userSettings.theme === 'light') return false;
+    if (userSettings.theme === 'dark') return true;
+    return systemIsDark;
+  }
+
+  function applyTheme() {
+    const isDark = getEffectiveIsDark();
     if (monacoSettings) {
       monacoSettings.theme = isDark ? 'vs-dark' : 'vs-light';
-      updateBodyTheme(isDark);
+    }
+    updateBodyTheme(isDark);
+    window.electron.send('set-title-bar-theme', isDark);
+  }
+
+  function setTheme(theme) {
+    userSettings.theme = theme;
+    saveSettings();
+    applyTheme();
+    syncSettingsForm();
+  }
+
+  function applyEditorFont() {
+    const fontFamily = userSettings.editorFontFamily ||
+      (baseEditorFont ? baseEditorFont.fontFamily : undefined);
+    const fontSize = userSettings.editorFontSize ||
+      (baseEditorFont ? baseEditorFont.fontSize : undefined);
+    if (monacoSettings) {
+      if (fontFamily) monacoSettings.fontFamily = fontFamily;
+      if (fontSize) monacoSettings.fontSize = fontSize;
+    }
+    Object.values(editors).forEach((editor) => {
+      if (editor) editor.updateOptions({ fontFamily, fontSize });
+    });
+  }
+
+  function applyPreviewFont() {
+    previewContainer.style.fontFamily = userSettings.previewFontFamily || '';
+    previewContainer.style.fontSize = userSettings.previewFontSize
+      ? `${userSettings.previewFontSize}px`
+      : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings modal
+  // ---------------------------------------------------------------------------
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const settingsBtn = document.getElementById('settings-btn');
+  const editorFontPreset = document.getElementById('settings-editor-font-preset');
+  const editorFontInput = document.getElementById('settings-editor-font');
+  const editorSizeInput = document.getElementById('settings-editor-size');
+  const previewFontPreset = document.getElementById('settings-preview-font-preset');
+  const previewFontInput = document.getElementById('settings-preview-font');
+  const previewSizeInput = document.getElementById('settings-preview-size');
+
+  function populateFontPresets() {
+    const fill = (select, presets) => {
+      select.innerHTML = '';
+      presets.forEach((preset) => {
+        const opt = document.createElement('option');
+        opt.value = preset.value;
+        opt.textContent = preset.label;
+        select.appendChild(opt);
+      });
+      const custom = document.createElement('option');
+      custom.value = '__custom__';
+      custom.textContent = 'Custom…';
+      select.appendChild(custom);
+    };
+    fill(editorFontPreset, FONT_PRESETS.editor);
+    fill(previewFontPreset, FONT_PRESETS.preview);
+  }
+
+  function matchPreset(select, presets, value) {
+    const found = presets.some((preset) => preset.value === value);
+    select.value = found ? value : '__custom__';
+  }
+
+  function syncSettingsForm() {
+    document.querySelectorAll('#settings-theme button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.theme === userSettings.theme);
+    });
+
+    editorFontInput.value = userSettings.editorFontFamily || '';
+    matchPreset(editorFontPreset, FONT_PRESETS.editor, userSettings.editorFontFamily || '');
+    editorSizeInput.value = userSettings.editorFontSize ||
+      (baseEditorFont ? baseEditorFont.fontSize : 18);
+
+    previewFontInput.value = userSettings.previewFontFamily || '';
+    matchPreset(previewFontPreset, FONT_PRESETS.preview, userSettings.previewFontFamily || '');
+    previewSizeInput.value = userSettings.previewFontSize || 16;
+  }
+
+  function showSettings() {
+    syncSettingsForm();
+    settingsOverlay.classList.remove('hidden');
+  }
+
+  function hideSettings() {
+    settingsOverlay.classList.add('hidden');
+    if (!isPreview && currentTab && editors[currentTab]) {
+      editors[currentTab].focus();
+    }
+  }
+
+  populateFontPresets();
+
+  document.getElementById('settings-theme').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-theme]');
+    if (btn) setTheme(btn.dataset.theme);
+  });
+
+  editorFontPreset.addEventListener('change', () => {
+    if (editorFontPreset.value === '__custom__') {
+      editorFontInput.focus();
+      return;
+    }
+    editorFontInput.value = editorFontPreset.value;
+    userSettings.editorFontFamily = editorFontPreset.value;
+    saveSettings();
+    applyEditorFont();
+  });
+
+  editorFontInput.addEventListener('input', () => {
+    userSettings.editorFontFamily = editorFontInput.value.trim();
+    saveSettings();
+    applyEditorFont();
+    matchPreset(editorFontPreset, FONT_PRESETS.editor, userSettings.editorFontFamily);
+  });
+
+  editorSizeInput.addEventListener('input', () => {
+    const value = parseInt(editorSizeInput.value, 10);
+    userSettings.editorFontSize = Number.isFinite(value) && value > 0 ? value : 0;
+    saveSettings();
+    applyEditorFont();
+  });
+
+  previewFontPreset.addEventListener('change', () => {
+    if (previewFontPreset.value === '__custom__') {
+      previewFontInput.focus();
+      return;
+    }
+    previewFontInput.value = previewFontPreset.value;
+    userSettings.previewFontFamily = previewFontPreset.value;
+    saveSettings();
+    applyPreviewFont();
+  });
+
+  previewFontInput.addEventListener('input', () => {
+    userSettings.previewFontFamily = previewFontInput.value.trim();
+    saveSettings();
+    applyPreviewFont();
+    matchPreset(previewFontPreset, FONT_PRESETS.preview, userSettings.previewFontFamily);
+  });
+
+  previewSizeInput.addEventListener('input', () => {
+    const value = parseInt(previewSizeInput.value, 10);
+    userSettings.previewFontSize = Number.isFinite(value) && value > 0 ? value : 0;
+    saveSettings();
+    applyPreviewFont();
+  });
+
+  document.getElementById('settings-reset').addEventListener('click', () => {
+    userSettings = { ...defaultSettings };
+    saveSettings();
+    applyTheme();
+    applyEditorFont();
+    applyPreviewFont();
+    syncSettingsForm();
+  });
+
+  document.getElementById('settings-close').addEventListener('click', hideSettings);
+  settingsBtn.addEventListener('click', showSettings);
+  settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) hideSettings();
+  });
+
+  window.electron.receive('theme-changed', (isDark) => {
+    systemIsDark = isDark;
+    if (monacoSettings) {
+      applyTheme();
     }
   });
 
   window.electron.receive('monaco-settings', (settings) => {
     if (!monacoSettings) {
       monacoSettings = settings;
-      updateBodyTheme(monacoSettings.theme === 'vs-dark');
+      baseEditorFont = {
+        fontFamily: settings.fontFamily,
+        fontSize: settings.fontSize,
+      };
+      systemIsDark = settings.theme === 'vs-dark';
+      applyEditorFont();
+      applyPreviewFont();
+      applyTheme();
       initializeTabs();
     }
   });
@@ -1167,6 +1423,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       { id: 'export-current-md', type: 'command', label: 'Save Tab as Markdown', detail: 'Save current tab as a .md file', icon: icons.save, action: () => { if (currentTab) saveAsMarkdown(currentTab); } },
       { id: 'copy-clipboard', type: 'command', label: 'Copy Tab to Clipboard', detail: 'Copy current tab content to clipboard', icon: icons.copy, action: () => { if (currentTab) copyToClipboard(currentTab); } },
       { id: 'backup-export-all', type: 'command', label: 'Backup: Export All Tabs (.zip)', detail: 'Export all tabs as a ZIP file', icon: icons.archive, action: () => exportAllTabs() },
+      { id: 'open-settings', type: 'command', label: 'Open Settings', detail: 'Editor / preview fonts and theme', icon: icons.settings, action: () => showSettings() },
+      { id: 'theme-system', type: 'command', label: 'Theme: Use System', detail: 'Follow the OS light / dark setting', icon: icons.monitor, action: () => setTheme('system') },
+      { id: 'theme-light', type: 'command', label: 'Theme: Light', detail: 'Always use the light theme', icon: icons.sun, action: () => setTheme('light') },
+      { id: 'theme-dark', type: 'command', label: 'Theme: Dark', detail: 'Always use the dark theme', icon: icons.moon, action: () => setTheme('dark') },
     ];
 
     staticCommands.forEach(cmd => {
