@@ -6,6 +6,9 @@
 *.key
 !build/entitlements*.plist
 
+# Local manual-verification scratch dirs
+scripts/.verify-*
+
 # Logs
 logs
 *.log
