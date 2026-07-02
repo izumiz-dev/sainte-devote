@@ -8,11 +8,11 @@ on:
 permissions: {}
 
 jobs:
-  build-release:
+  build-windows:
     runs-on: windows-latest
 
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout code
@@ -55,18 +55,18 @@ jobs:
       - name: Build Windows
         run: pnpm build:win
 
-      - name: Release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          files: |
-            dist/*.exe
-          fail_on_unmatched_files: true
+          name: windows-dist
+          path: dist/*.exe
+          if-no-files-found: error
 
   build-mac:
     runs-on: macos-latest
 
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout code
@@ -125,9 +125,37 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm build:mac
 
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-dist
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  publish:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: windows-dist
+          path: dist
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: macos-dist
+          path: dist
+
       - name: Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           files: |
+            dist/*.exe
             dist/*.dmg
           fail_on_unmatched_files: true
