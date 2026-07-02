@@ -77,6 +77,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   marked.setOptions({
     mangle: false,
     headerIds: false,
+    breaks: true,
     renderer: renderer,
     highlight: function (code, lang) {
       if (lang && hljs.getLanguage(lang)) {
