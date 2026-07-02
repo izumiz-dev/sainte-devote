@@ -17,11 +17,13 @@ const USER_DATA = path.join(__dirname, '.verify-user-data-security');
 const FILE_OPENED = path.join(FIXTURE_DIR, 'opened.md');
 const FILE_SECRET = path.join(FIXTURE_DIR, 'secret.txt');
 const FILE_NULL = path.join(FIXTURE_DIR, 'nullbyte.md');
+const FILE_TOCTOU = path.join(FIXTURE_DIR, 'toctou.md');
 
 fs.mkdirSync(FIXTURE_DIR, { recursive: true });
 fs.writeFileSync(FILE_OPENED, '# Opened\nopened-content\n');
 fs.writeFileSync(FILE_SECRET, 'TOP-SECRET-DATA\n');
 fs.writeFileSync(FILE_NULL, 'null-byte-target\n');
+fs.writeFileSync(FILE_TOCTOU, 'toctou-original\n');
 
 const findings = [];
 
@@ -213,6 +215,65 @@ async function runCloseFileRevokesWriteCheck() {
   pass('close-file revokes autosave authorization');
 }
 
+async function runRecentFileReadOnlyCheck() {
+  const win = await getWindow();
+  const target = path.resolve(FILE_OPENED);
+
+  // Actually close the opened.md tab (via its close button, like a real user)
+  // so the subsequent open-recent-file reopen creates a fresh tab rather than
+  // switching to the still-open, already-writable one. Closing also sends
+  // close-file, which revokes write access while the path stays in the
+  // recent-files list.
+  await win.webContents.executeJavaScript(`
+    (async () => {
+      const tab = [...document.querySelectorAll('.tab')].find(
+        (t) => (t.querySelector('span:not(.close-tab-btn)')?.textContent || '') === 'opened.md'
+      );
+      tab?.querySelector('.close-tab-btn')?.click();
+    })()
+  `);
+  await wait(200);
+
+  const result = await win.webContents.executeJavaScript(`
+    (async () => {
+      const openResult = await window.electron.invoke('open-recent-file', ${JSON.stringify(target)});
+      await new Promise((r) => setTimeout(r, 500));
+
+      const tab = [...document.querySelectorAll('.tab')].find(
+        (t) => (t.querySelector('span:not(.close-tab-btn)')?.textContent || '') === 'opened.md'
+      );
+      const isMarkedReadOnly = Boolean(tab && tab.classList.contains('tab-readonly'));
+
+      window.electron.send('save-file-to-path', {
+        filePath: ${JSON.stringify(target)},
+        content: 'reopened-recent write attempt',
+      });
+      await new Promise((r) => setTimeout(r, 600));
+
+      return {
+        openResult,
+        isMarkedReadOnly,
+        blockedInBody: document.body.textContent.includes('Unauthorized'),
+      };
+    })()
+  `);
+
+  const onDisk = fs.readFileSync(FILE_OPENED, 'utf8');
+  if (!result.openResult?.ok) {
+    fail('open-recent-file should still succeed for a tracked recent path', result);
+  }
+  if (!result.isMarkedReadOnly) {
+    fail('recent-file reopen must mark the tab read-only in the UI', result);
+  }
+  if (!result.blockedInBody || onDisk.includes('reopened-recent write attempt')) {
+    fail('open-recent-file must not silently re-grant autosave write access', {
+      result,
+      onDisk,
+    });
+  }
+  pass('open-recent-file reopens read-only and does not re-grant write access');
+}
+
 async function runInvalidPathChecks() {
   const win = await getWindow();
   const before = await tabState();
@@ -269,8 +330,60 @@ async function runSymlinkReadCheck() {
   pass('symlink paths are rejected on read');
 }
 
+async function runSymlinkWriteToctouCheck() {
+  if (process.platform === 'win32') {
+    pass('symlink write TOCTOU check skipped on Windows (O_NOFOLLOW is a no-op there)');
+    return;
+  }
+
+  // FILE_TOCTOU is opened at startup via argv (a trusted path), so it is
+  // already present in activeFilePaths by the time this check runs. Swap it
+  // for a symlink after validation would normally occur, then attempt a
+  // write: O_NOFOLLOW must make the open() call itself fail.
+  const target = path.resolve(FILE_TOCTOU);
+  const linkDest = path.join(FIXTURE_DIR, 'toctou-secret.txt');
+  fs.writeFileSync(linkDest, 'TOCTOU-SECRET-DATA\n');
+
+  try {
+    fs.unlinkSync(target);
+    fs.symlinkSync(linkDest, target);
+  } catch (error) {
+    pass('symlink write TOCTOU check skipped (platform permissions)', error.message);
+    return;
+  }
+
+  const win = await getWindow();
+  await win.webContents.executeJavaScript(`
+    window.electron.send('save-file-to-path', {
+      filePath: ${JSON.stringify(target)},
+      content: 'toctou write attempt',
+    });
+  `);
+  await wait(600);
+
+  let linkDestContent = '';
+  try {
+    linkDestContent = fs.readFileSync(linkDest, 'utf8');
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+  } catch {
+    // ignore cleanup errors
+  }
+
+  if (linkDestContent.includes('toctou write attempt')) {
+    fail('save-file-to-path must not follow a symlink swapped in after validation', {
+      linkDestContent,
+    });
+  }
+  pass('O_NOFOLLOW rejects writes to a path swapped for a symlink after validation');
+}
+
 app.setPath('userData', USER_DATA);
-process.argv = [process.argv[0], path.join(ROOT, 'src', 'main.js'), FILE_OPENED];
+process.argv = [process.argv[0], path.join(ROOT, 'src', 'main.js'), FILE_OPENED, FILE_TOCTOU];
 
 require(path.join(ROOT, 'src', 'main.js'));
 
@@ -282,7 +395,9 @@ app.whenReady().then(async () => {
     await runOpenExternalChecks();
     await runUnauthorizedSaveCheck();
     await runArbitraryReadCheck();
+    await runSymlinkWriteToctouCheck();
     await runCloseFileRevokesWriteCheck();
+    await runRecentFileReadOnlyCheck();
     await runInvalidPathChecks();
     await runSymlinkReadCheck();
 

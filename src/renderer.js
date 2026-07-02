@@ -330,8 +330,14 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   async function bindTabToFile(tabId, filePath) {
     const fileName = getFileNameFromPath(filePath);
     tabData[tabId].filePath = filePath;
+    tabData[tabId].readOnly = false;
     tabData[tabId].title = fileName;
     updateTabTitleUI(tabId, fileName);
+    const tabEl = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (tabEl) {
+      tabEl.classList.remove('tab-readonly');
+      tabEl.removeAttribute('title');
+    }
     await Promise.all([
       deleteTabDataIndexedDB(tabId),
       deleteEditorContentIndexedDB(tabId),
@@ -340,14 +346,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     updateWindowTitle();
   }
 
-  function openFileFromPath(filePath, content) {
+  function openFileFromPath(filePath, content, readOnly = false) {
     const existing = findTabByFilePath(filePath);
     if (existing !== null) {
       switchTab(existing);
       return;
     }
     const title = getFileNameFromPath(filePath);
-    addTab(null, title, content, filePath);
+    addTab(null, title, content, filePath, readOnly);
+    if (readOnly) {
+      showNotification('Opened read-only — use Save As to enable autosave');
+    }
   }
 
   async function openFileDialog() {
@@ -359,7 +368,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   function saveCurrentTab() {
     if (!currentTab) return;
-    if (tabData[currentTab]?.filePath) {
+    const tab = tabData[currentTab];
+    if (tab?.filePath && !tab.readOnly) {
       showNotification('Saved');
     } else {
       saveAsCurrentTab();
@@ -419,7 +429,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           if (tabData[tabId]) {
             tabData[tabId].content = content;
           }
-          if (tabData[tabId]?.filePath) {
+          if (tabData[tabId]?.filePath && !tabData[tabId]?.readOnly) {
             scheduleFileAutosave(tabId, content);
           } else {
             await saveEditorContentIndexedDB(tabId, content);
@@ -508,7 +518,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  function addTab(tabId = null, title = null, content = null, filePath = null) {
+  function addTab(tabId = null, title = null, content = null, filePath = null, readOnly = false) {
     if (tabId !== null) {
       tabId = Number(tabId);
       if (isNaN(tabId)) tabId = getNextAvailableTabId();
@@ -523,6 +533,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       content: content || '',
       order: currentOrder,
       filePath: filePath || null,
+      readOnly: Boolean(readOnly),
     };
 
     title = title || `Untitled ${getDisplayTabNumber(tabId)}`;
@@ -531,6 +542,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const tabs = document.getElementById('tabs');
     const newTab = document.createElement('button');
     newTab.classList.add('tab');
+    if (readOnly) {
+      newTab.classList.add('tab-readonly');
+      newTab.title = 'Read-only — use Save As to enable autosave';
+    }
     newTab.dataset.tab = tabId;
     newTab.draggable = true;
 
@@ -706,8 +721,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       while (pendingFileOpens.length > 0) {
         const pending = [...pendingFileOpens];
         pendingFileOpens.length = 0;
-        for (const { filePath, content } of pending) {
-          openFileFromPath(filePath, content);
+        for (const { filePath, content, readOnly } of pending) {
+          openFileFromPath(filePath, content, readOnly);
         }
       }
       isInitialized = true;
@@ -1547,11 +1562,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  window.electron.receive('file-opened', ({ filePath, content }) => {
+  window.electron.receive('file-opened', ({ filePath, content, readOnly }) => {
     if (!isInitialized) {
-      pendingFileOpens.push({ filePath, content });
+      pendingFileOpens.push({ filePath, content, readOnly });
     } else {
-      openFileFromPath(filePath, content);
+      openFileFromPath(filePath, content, readOnly);
     }
   });
 

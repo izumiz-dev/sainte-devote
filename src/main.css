@@ -355,6 +355,13 @@ body.tabs-hidden #tabs {
   margin-right: 2px;
 }
 
+.tab-readonly span:first-child::after {
+  content: '🔒';
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 .dark-theme .tab {
   color: #9aa1ad;
 }

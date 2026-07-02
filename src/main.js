@@ -12,6 +12,34 @@ const path = require('path');
 const fs = require('fs');
 const JSZip = require('jszip');
 
+const { O_RDONLY, O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW } = fs.constants;
+// O_NOFOLLOW is undefined on some platforms; fall back to 0 so the flag is a no-op
+// rather than corrupting the bitmask with NaN.
+const NOFOLLOW = O_NOFOLLOW || 0;
+
+// Opens with O_NOFOLLOW so a symlink swapped in after path validation (TOCTOU)
+// makes the open() call itself fail instead of silently following the link.
+function readFileNoFollow(safePath) {
+  let fd;
+  try {
+    fd = fs.openSync(safePath, O_RDONLY | NOFOLLOW);
+    return fs.readFileSync(fd, 'utf8');
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function writeFileNoFollow(safePath, data, encoding = 'utf8') {
+  let fd;
+  try {
+    fd = fs.openSync(safePath, O_WRONLY | O_CREAT | O_TRUNC | NOFOLLOW, 0o666);
+    if (encoding === null) fs.writeFileSync(fd, data);
+    else fs.writeFileSync(fd, data, encoding);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 let win;
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -208,7 +236,7 @@ function readFileContent(filePath) {
   const safePath = validateReadableFilePath(filePath);
   if (!safePath) return null;
   try {
-    return fs.readFileSync(safePath, 'utf8');
+    return readFileNoFollow(safePath);
   } catch (error) {
     console.error('Failed to read file:', error);
     return null;
@@ -224,16 +252,16 @@ function extractFilePathsFromArgv(argv) {
     .filter(Boolean);
 }
 
-function openFileInRenderer(filePath) {
+function openFileInRenderer(filePath, { grantWriteAccess = true } = {}) {
   const safePath = validateReadableFilePath(filePath);
   if (!safePath || !win || win.isDestroyed()) return;
 
   const content = readFileContent(safePath);
   if (content === null) return;
 
-  activeFilePaths.add(safePath);
+  if (grantWriteAccess) activeFilePaths.add(safePath);
   addToRecentFiles(safePath);
-  win.webContents.send('file-opened', { filePath: safePath, content });
+  win.webContents.send('file-opened', { filePath: safePath, content, readOnly: !grantWriteAccess });
   app.addRecentDocument(safePath);
 }
 
@@ -562,7 +590,7 @@ ipcMain.on('save-file-to-path', (event, { filePath, content }) => {
       event.reply('save-file-error', 'Unauthorized file path access');
       return;
     }
-    fs.writeFileSync(safePath, content, 'utf8');
+    writeFileNoFollow(safePath, content);
     addToRecentFiles(safePath);
     app.addRecentDocument(safePath);
   } catch (error) {
@@ -594,7 +622,10 @@ ipcMain.handle('open-recent-file', async (_event, filePath) => {
   if (!isTrackedRecentFile(filePath)) {
     return { ok: false, reason: 'File is not in the recent list' };
   }
-  openFileInRenderer(filePath);
+  // Recent-file reopen is reachable from the renderer without a fresh user
+  // file-selection gesture (dialog / drag-drop / argv), so it must not grant
+  // silent overwrite access. The tab opens read-only until promoted via Save As.
+  openFileInRenderer(filePath, { grantWriteAccess: false });
   return { ok: true };
 });
 
@@ -624,7 +655,7 @@ ipcMain.on('save-file', async (event, { content, fileName }) => {
         event.reply('save-file-error', 'Invalid file path');
         return;
       }
-      fs.writeFileSync(writePath, content, 'utf8');
+      writeFileNoFollow(writePath, content);
       activeFilePaths.add(writePath);
       addToRecentFiles(writePath);
       app.addRecentDocument(writePath);
@@ -675,7 +706,7 @@ ipcMain.on('export-tabs-data', async (event, tabsData) => {
         event.reply('save-file-error', 'Invalid export path');
         return;
       }
-      fs.writeFileSync(writePath, content);
+      writeFileNoFollow(writePath, content, null);
       event.reply('save-file-success', writePath);
     }
   } catch (error) {
