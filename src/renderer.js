@@ -135,9 +135,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   let tabHistory = [];
   const autosaveTimers = {};
   let pendingSaveAsTabId = null;
-  const RECENT_FILES_KEY = 'sainteDevoteRecentFiles';
-  const MAX_RECENT_FILES = 10;
-
   let isInitialized = false;
   const pendingFileOpens = [];
 
@@ -308,21 +305,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  function loadRecentFiles() {
+  async function loadRecentFiles() {
     try {
-      return JSON.parse(localStorage.getItem(RECENT_FILES_KEY) || '[]');
+      const recent = await window.electron.invoke('get-recent-files');
+      return Array.isArray(recent) ? recent : [];
     } catch {
       return [];
     }
-  }
-
-  function addToRecentFiles(filePath) {
-    const recent = loadRecentFiles().filter(p => p !== filePath);
-    recent.unshift(filePath);
-    localStorage.setItem(
-      RECENT_FILES_KEY,
-      JSON.stringify(recent.slice(0, MAX_RECENT_FILES)),
-    );
   }
 
   function scheduleFileAutosave(tabId, content) {
@@ -348,7 +337,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       deleteEditorContentIndexedDB(tabId),
     ]);
     await saveTabData();
-    addToRecentFiles(filePath);
     updateWindowTitle();
   }
 
@@ -360,7 +348,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
     const title = getFileNameFromPath(filePath);
     addTab(null, title, content, filePath);
-    addToRecentFiles(filePath);
   }
 
   async function openFileDialog() {
@@ -1684,7 +1671,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     });
 
-    const recentFiles = loadRecentFiles();
+    const recentFiles = await loadRecentFiles();
     recentFiles.forEach(filePath => {
       const fileName = getFileNameFromPath(filePath);
       if (isMatch(fileName) || isMatch('recent')) {
@@ -1695,7 +1682,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           detail: filePath,
           icon: icons.file,
           action: () => {
-            window.electron.send('open-dropped-file', filePath);
+            window.electron.invoke('open-recent-file', filePath);
           },
         });
       }
@@ -2010,11 +1997,6 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       /\.(md|markdown|txt)$/i.test(f.name),
     );
 
-    files.forEach(f => {
-      const filePath = window.electron.getFilePath(f);
-      if (filePath) {
-        window.electron.send('open-dropped-file', filePath);
-      }
-    });
+    window.electron.openDroppedFiles(files);
   });
 });

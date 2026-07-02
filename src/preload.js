@@ -10,7 +10,6 @@ const SEND_CHANNELS = new Set([
   'open-external',
   'set-title-bar-theme',
   'export-tabs-data',
-  'open-dropped-file',
   'update-window-title',
 ]);
 
@@ -26,6 +25,8 @@ const RECEIVE_CHANNELS = new Set([
 
 const INVOKE_CHANNELS = new Set([
   'open-file-dialog',
+  'get-recent-files',
+  'open-recent-file',
 ]);
 
 contextBridge.exposeInMainWorld('electron', {
@@ -54,7 +55,24 @@ contextBridge.exposeInMainWorld('electron', {
     }
     return ipcRenderer.invoke(channel, ...args);
   },
-  getFilePath: (file) => webUtils.getPathForFile(file),
+  openDroppedFiles: (files) => {
+    if (!files || typeof files[Symbol.iterator] !== 'function') {
+      return Promise.resolve([]);
+    }
+
+    const paths = [];
+    for (const file of files) {
+      if (!file || typeof file !== 'object') continue;
+      const filePath = webUtils.getPathForFile(file);
+      if (filePath) paths.push(filePath);
+    }
+
+    if (!paths.length) {
+      return Promise.resolve([]);
+    }
+
+    return ipcRenderer.invoke('open-dropped-files', paths);
+  },
   onExportRequest: (callback) => {
     const subscription = (event, ...args) => callback(...args);
     ipcRenderer.on('request-export-all', subscription);

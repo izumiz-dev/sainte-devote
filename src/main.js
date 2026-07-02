@@ -18,8 +18,11 @@ const isDev = process.env.NODE_ENV === 'development';
 const isLinux = process.platform === 'linux';
 const filePathsToOpen = [];
 const activeFilePaths = new Set();
+const MAX_RECENT_FILES = 10;
+let recentFilePaths = [];
 
 const ALLOWED_EXTENSIONS = new Set(['.md', '.markdown', '.txt']);
+const EXPORT_EXTENSIONS = new Set(['.zip']);
 
 // Only open external URLs with a safe, expected protocol. shell.openExternal
 // can launch local files / handlers (e.g. file://, UNC paths) which a
@@ -44,18 +47,46 @@ function isAllowedExtension(filePath) {
   return ALLOWED_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+function isBlockedUncPath(resolvedPath) {
+  return resolvedPath.startsWith('\\\\') || resolvedPath.startsWith('//');
+}
+
+function pathContainsSymlink(resolvedPath) {
+  const normalized = path.resolve(resolvedPath);
+  const { root } = path.parse(normalized);
+  const parts = path.relative(root, normalized).split(path.sep).filter(Boolean);
+  let current = root;
+
+  for (let i = 0; i < parts.length; i++) {
+    current = path.join(current, parts[i]);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) {
+        return true;
+      }
+    } catch {
+      if (i < parts.length - 1) {
+        return false;
+      }
+      break;
+    }
+  }
+
+  return false;
+}
+
 function validateReadableFilePath(filePath) {
   if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) {
     return null;
   }
   const resolved = path.resolve(filePath);
-  if (resolved.startsWith('\\\\') || resolved.startsWith('//')) {
+  if (isBlockedUncPath(resolved)) {
     return null;
   }
   if (!isAllowedExtension(resolved)) return null;
+  if (pathContainsSymlink(resolved)) return null;
   try {
-    const stat = fs.statSync(resolved);
-    if (!stat.isFile()) return null;
+    const stat = fs.lstatSync(resolved);
+    if (!stat.isFile() || stat.isSymbolicLink()) return null;
     return resolved;
   } catch {
     return null;
@@ -67,13 +98,39 @@ function validateWritableFilePath(filePath, { allowNewExtension = false } = {}) 
     return null;
   }
   let resolved = path.resolve(filePath);
-  if (resolved.startsWith('\\\\') || resolved.startsWith('//')) {
+  if (isBlockedUncPath(resolved)) {
     return null;
   }
   if (!isAllowedExtension(resolved)) {
     if (!allowNewExtension) return null;
     resolved = resolved + '.md';
   }
+  if (pathContainsSymlink(resolved)) return null;
+  const parent = path.dirname(resolved);
+  try {
+    if (!fs.existsSync(parent)) return null;
+    if (fs.existsSync(resolved)) {
+      const stat = fs.lstatSync(resolved);
+      if (!stat.isFile() || stat.isSymbolicLink()) return null;
+    }
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
+function validateExportFilePath(filePath) {
+  if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) {
+    return null;
+  }
+  const resolved = path.resolve(filePath);
+  if (isBlockedUncPath(resolved)) {
+    return null;
+  }
+  if (!EXPORT_EXTENSIONS.has(path.extname(resolved).toLowerCase())) {
+    return null;
+  }
+  if (pathContainsSymlink(resolved)) return null;
   const parent = path.dirname(resolved);
   try {
     if (!fs.existsSync(parent)) return null;
@@ -81,6 +138,70 @@ function validateWritableFilePath(filePath, { allowNewExtension = false } = {}) 
   } catch {
     return null;
   }
+}
+
+function getRecentFilesPath() {
+  return path.join(app.getPath('userData'), 'recent-files.json');
+}
+
+function loadRecentFilesFromDisk() {
+  try {
+    const raw = fs.readFileSync(getRecentFilesPath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    recentFilePaths = parsed
+      .filter((entry) => typeof entry === 'string')
+      .map((entry) => validateReadableFilePath(entry))
+      .filter(Boolean)
+      .slice(0, MAX_RECENT_FILES);
+  } catch {
+    recentFilePaths = [];
+  }
+}
+
+function saveRecentFilesToDisk() {
+  try {
+    fs.writeFileSync(
+      getRecentFilesPath(),
+      JSON.stringify(recentFilePaths, null, 2),
+      'utf8',
+    );
+  } catch (error) {
+    console.error('Failed to persist recent files:', error);
+  }
+}
+
+function addToRecentFiles(filePath) {
+  const safePath = validateReadableFilePath(filePath);
+  if (!safePath) return;
+  recentFilePaths = [
+    safePath,
+    ...recentFilePaths.filter((entry) => entry !== safePath),
+  ].slice(0, MAX_RECENT_FILES);
+  saveRecentFilesToDisk();
+}
+
+function isTrackedRecentFile(filePath) {
+  const safePath = validateReadableFilePath(filePath);
+  return Boolean(safePath && recentFilePaths.includes(safePath));
+}
+
+function removeFromActiveFilePaths(filePath) {
+  const safePath = validateReadableFilePath(filePath);
+  if (safePath) {
+    activeFilePaths.delete(safePath);
+    return;
+  }
+  if (typeof filePath === 'string') {
+    activeFilePaths.delete(path.resolve(filePath));
+  }
+}
+
+function getRepresentedFilename(filePath) {
+  if (!filePath || typeof filePath !== 'string') return '';
+  const safePath = validateReadableFilePath(filePath);
+  if (!safePath || !activeFilePaths.has(safePath)) return '';
+  return safePath;
 }
 
 function readFileContent(filePath) {
@@ -111,6 +232,7 @@ function openFileInRenderer(filePath) {
   if (content === null) return;
 
   activeFilePaths.add(safePath);
+  addToRecentFiles(safePath);
   win.webContents.send('file-opened', { filePath: safePath, content });
   app.addRecentDocument(safePath);
 }
@@ -143,6 +265,7 @@ const monacoSettings = {
   webPreferences: {
     nodeIntegration: false,
     contextIsolation: true,
+    sandbox: true,
     preload: path.join(__dirname, 'preload.js'),
   },
   autoHideMenuBar: true,
@@ -365,6 +488,7 @@ if (!gotTheLock) {
   }
 
   app.whenReady().then(() => {
+    loadRecentFilesFromDisk();
     createWindow();
     win.webContents.on('did-finish-load', processPendingFileOpens);
   });
@@ -415,6 +539,7 @@ ipcMain.handle('open-file-dialog', async () => {
       const content = readFileContent(safePath);
       if (content !== null) {
         activeFilePaths.add(safePath);
+        addToRecentFiles(safePath);
         files.push({ filePath: safePath, content });
         app.addRecentDocument(safePath);
       }
@@ -438,6 +563,7 @@ ipcMain.on('save-file-to-path', (event, { filePath, content }) => {
       return;
     }
     fs.writeFileSync(safePath, content, 'utf8');
+    addToRecentFiles(safePath);
     app.addRecentDocument(safePath);
   } catch (error) {
     console.error('Autosave error:', error);
@@ -446,21 +572,37 @@ ipcMain.on('save-file-to-path', (event, { filePath, content }) => {
 });
 
 ipcMain.on('close-file', (event, filePath) => {
-  if (typeof filePath === 'string') {
-    const safePath = path.resolve(filePath);
-    activeFilePaths.delete(safePath);
-  }
+  removeFromActiveFilePaths(filePath);
 });
 
-ipcMain.on('open-dropped-file', (event, filePath) => {
+ipcMain.handle('open-dropped-files', async (_event, filePaths) => {
+  if (!Array.isArray(filePaths)) return [];
+
+  const opened = [];
+  for (const filePath of filePaths) {
+    const safePath = validateReadableFilePath(filePath);
+    if (!safePath) continue;
+    openFileInRenderer(safePath);
+    opened.push(safePath);
+  }
+  return opened;
+});
+
+ipcMain.handle('get-recent-files', async () => [...recentFilePaths]);
+
+ipcMain.handle('open-recent-file', async (_event, filePath) => {
+  if (!isTrackedRecentFile(filePath)) {
+    return { ok: false, reason: 'File is not in the recent list' };
+  }
   openFileInRenderer(filePath);
+  return { ok: true };
 });
 
 ipcMain.on('update-window-title', (event, { title, filePath }) => {
   if (win && !win.isDestroyed() && typeof title === 'string') {
     win.setTitle(title);
     if (process.platform === 'darwin') {
-      win.setRepresentedFilename(filePath || '');
+      win.setRepresentedFilename(getRepresentedFilename(filePath));
     }
   }
 });
@@ -484,6 +626,7 @@ ipcMain.on('save-file', async (event, { content, fileName }) => {
       }
       fs.writeFileSync(writePath, content, 'utf8');
       activeFilePaths.add(writePath);
+      addToRecentFiles(writePath);
       app.addRecentDocument(writePath);
       event.reply('save-file-success', writePath);
     }
@@ -527,8 +670,13 @@ ipcMain.on('export-tabs-data', async (event, tabsData) => {
     });
 
     if (!result.canceled && result.filePath) {
-      fs.writeFileSync(result.filePath, content);
-      event.reply('save-file-success', result.filePath);
+      const writePath = validateExportFilePath(result.filePath);
+      if (!writePath) {
+        event.reply('save-file-error', 'Invalid export path');
+        return;
+      }
+      fs.writeFileSync(writePath, content);
+      event.reply('save-file-success', writePath);
     }
   } catch (error) {
     console.error('Zip export error:', error);
