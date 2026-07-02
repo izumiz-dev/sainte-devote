@@ -1,0 +1,9 @@
+{
+  "name": "open_dashboard",
+  "description": "Opens the Serena web dashboard in the default web browser.",
+  "inputSchema": {
+    "properties": {},
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

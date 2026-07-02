@@ -1,0 +1,54 @@
+{
+  "name": "find_implementations",
+  "description": "Finds implementations of the symbol at the given `name_path`. Returns a list of JSON objects with the symbols implementing the requested symbol.",
+  "inputSchema": {
+    "properties": {
+      "name_path": {
+        "title": "Name Path",
+        "type": "string",
+        "description": "The symbol's name path."
+      },
+      "relative_path": {
+        "title": "Relative Path",
+        "type": "string",
+        "description": "The relative path to the file containing the symbol for which to find implementations.\nNote that here you can't pass a directory but must pass a file."
+      },
+      "include_info": {
+        "default": false,
+        "title": "Include Info",
+        "type": "boolean",
+        "description": "Whether to include additional info (hover-like, typically including docstring and signature),\nabout the implementing symbols."
+      },
+      "include_kinds": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Include Kinds",
+        "type": "array",
+        "description": "(optional) limits results to the given LSP symbol kinds (integers)."
+      },
+      "exclude_kinds": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Exclude Kinds",
+        "type": "array",
+        "description": "(optional) list of LSP symbol kinds (integers) to exclude."
+      },
+      "max_answer_chars": {
+        "default": -1,
+        "title": "Max Answer Chars",
+        "type": "integer",
+        "description": "Max result length; -1 for default."
+      }
+    },
+    "required": [
+      "name_path",
+      "relative_path"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

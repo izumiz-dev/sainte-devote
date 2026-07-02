@@ -1,0 +1,30 @@
+{
+  "name": "replace_symbol_body",
+  "description": "Replaces the body of the given symbol.\n\nIMPORTANT: Only replace symbol bodies if you have previously made a retrieval with include_body=True and thus know what\nconstitutes the body!.",
+  "inputSchema": {
+    "properties": {
+      "name_path": {
+        "title": "Name Path",
+        "type": "string",
+        "description": "Name path of the symbol whose body to replace."
+      },
+      "relative_path": {
+        "title": "Relative Path",
+        "type": "string",
+        "description": "The relative path to the file containing the symbol."
+      },
+      "body": {
+        "title": "Body",
+        "type": "string",
+        "description": "The new symbol body. The symbol body is the definition of a symbol\nin the programming language, including e.g. the signature line for functions.\nDepending on the language, it may or may not include a preceding docstring or other preceding annotations."
+      }
+    },
+    "required": [
+      "name_path",
+      "relative_path",
+      "body"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

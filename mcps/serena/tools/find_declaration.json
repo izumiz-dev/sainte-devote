@@ -1,0 +1,49 @@
+{
+  "name": "find_declaration",
+  "description": "Finds the declaration of a symbol.",
+  "inputSchema": {
+    "properties": {
+      "relative_path": {
+        "title": "Relative Path",
+        "type": "string",
+        "description": "The relative path to the source file containing the symbol for which to find the declaration."
+      },
+      "regex": {
+        "title": "Regex",
+        "type": "string",
+        "description": "A regular expression with one group, where the group matches the symbol for which to perform the lookup.\nFor example, to find the declaration of the `process` method in a call like `obj.process()`,\npass an expression like \"obj\\.(process)\\(process_input_arg=37\\)\".\nPrefer regexes with sufficiently large context around the group to render the match unambiguous.\nUses Python syntax with MULTILINE and DOTALL flags enabled."
+      },
+      "containing_symbol_name_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Containing Symbol Name Path",
+        "description": "Optional name path of a containing symbol whose body shall be searched instead of the full file."
+      },
+      "include_body": {
+        "default": false,
+        "title": "Include Body",
+        "type": "boolean",
+        "description": "Whether to include the symbol's body in the result. Default False."
+      },
+      "include_info": {
+        "default": false,
+        "title": "Include Info",
+        "type": "boolean",
+        "description": "Whether to include additional info (hover-like). Default False."
+      }
+    },
+    "required": [
+      "relative_path",
+      "regex"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

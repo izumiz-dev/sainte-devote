@@ -1,0 +1,42 @@
+{
+  "name": "get_diagnostics_for_file",
+  "description": "Gets diagnostics for a file. Diagnostics are grouped as `relative_path -> severity -> name_path -> diagnostics_results`.\nIf a diagnostic cannot be mapped to a symbol, it is grouped under the special name path `<file>`. Returns grouped diagnostics for the requested file.",
+  "inputSchema": {
+    "properties": {
+      "relative_path": {
+        "title": "Relative Path",
+        "type": "string",
+        "description": "The relative path to the file to inspect."
+      },
+      "start_line": {
+        "default": 0,
+        "title": "Start Line",
+        "type": "integer",
+        "description": "The first 0-based line to include. Defaults to 0."
+      },
+      "end_line": {
+        "default": -1,
+        "title": "End Line",
+        "type": "integer",
+        "description": "The last 0-based line to include. Defaults to -1, which means until the end of the file."
+      },
+      "min_severity": {
+        "default": 4,
+        "title": "Min Severity",
+        "type": "integer",
+        "description": "Minimum LSP severity to include, where 1=Error, 2=Warning, 3=Information, 4=Hint.\nDiagnostics with lower-or-equal numeric severity are returned."
+      },
+      "max_answer_chars": {
+        "default": -1,
+        "title": "Max Answer Chars",
+        "type": "integer",
+        "description": "Max result length; -1 for default."
+      }
+    },
+    "required": [
+      "relative_path"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

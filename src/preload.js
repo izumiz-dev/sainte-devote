@@ -1,13 +1,17 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Only these IPC channels may cross the bridge. This prevents a compromised
 // renderer (e.g. via XSS in the markdown preview) from invoking arbitrary
 // main-process handlers.
 const SEND_CHANNELS = new Set([
   'save-file',
+  'save-file-to-path',
+  'close-file',
   'open-external',
   'set-title-bar-theme',
   'export-tabs-data',
+  'open-dropped-file',
+  'update-window-title',
 ]);
 
 const RECEIVE_CHANNELS = new Set([
@@ -16,15 +20,25 @@ const RECEIVE_CHANNELS = new Set([
   'save-file-success',
   'save-file-error',
   'request-export-all',
+  'file-opened',
+  'menu-action',
+]);
+
+const INVOKE_CHANNELS = new Set([
+  'open-file-dialog',
 ]);
 
 contextBridge.exposeInMainWorld('electron', {
   receive: (channel, func) => {
     if (!RECEIVE_CHANNELS.has(channel)) {
       console.warn(`Blocked ipcRenderer.on on disallowed channel: ${channel}`);
-      return;
+      return () => {};
     }
-    ipcRenderer.on(channel, (event, ...args) => func(...args));
+    const subscription = (event, ...args) => func(...args);
+    ipcRenderer.on(channel, subscription);
+    return () => {
+      ipcRenderer.removeListener(channel, subscription);
+    };
   },
   send: (channel, ...args) => {
     if (!SEND_CHANNELS.has(channel)) {
@@ -33,6 +47,20 @@ contextBridge.exposeInMainWorld('electron', {
     }
     ipcRenderer.send(channel, ...args);
   },
-  onExportRequest: (callback) => ipcRenderer.on('request-export-all', callback),
+  invoke: (channel, ...args) => {
+    if (!INVOKE_CHANNELS.has(channel)) {
+      console.warn(`Blocked ipcRenderer.invoke on disallowed channel: ${channel}`);
+      return Promise.reject(new Error(`Disallowed channel: ${channel}`));
+    }
+    return ipcRenderer.invoke(channel, ...args);
+  },
+  getFilePath: (file) => webUtils.getPathForFile(file),
+  onExportRequest: (callback) => {
+    const subscription = (event, ...args) => callback(...args);
+    ipcRenderer.on('request-export-all', subscription);
+    return () => {
+      ipcRenderer.removeListener('request-export-all', subscription);
+    };
+  },
   sendExportData: (data) => ipcRenderer.send('export-tabs-data', data),
 });

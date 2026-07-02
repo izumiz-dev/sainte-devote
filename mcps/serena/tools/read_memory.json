@@ -1,0 +1,17 @@
+{
+  "name": "read_memory",
+  "description": "Use to read a memory that is likely to be relevant to the current task, inferring relevance e.g. from the name.",
+  "inputSchema": {
+    "properties": {
+      "memory_name": {
+        "title": "Memory Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "memory_name"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

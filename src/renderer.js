@@ -133,9 +133,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   const initializedEditors = new Set();
   let tabHistory = [];
+  const autosaveTimers = {};
+  let pendingSaveAsTabId = null;
+  const RECENT_FILES_KEY = 'sainteDevoteRecentFiles';
+  const MAX_RECENT_FILES = 10;
+
+  let isInitialized = false;
+  const pendingFileOpens = [];
 
   const dbName = 'SainteDevoteDB';
   let db;
+  let dbReadyPromise = null;
+  let initPromise = null;
 
   function openDatabase() {
     return new Promise((resolve, reject) => {
@@ -162,13 +171,25 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
+  function ensureDatabase() {
+    if (!dbReadyPromise) {
+      dbReadyPromise = openDatabase().catch((err) => {
+        dbReadyPromise = null;
+        throw err;
+      });
+    }
+    return dbReadyPromise;
+  }
+
   function saveTabDataIndexedDB() {
+    if (!db) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['tabs'], 'readwrite');
       const store = transaction.objectStore('tabs');
 
       store.clear().onsuccess = () => {
         Object.entries(tabData).forEach(([id, tab]) => {
+          if (tab.filePath) return;
           store.put({
             id: Number(id),
             title: tab.title,
@@ -184,6 +205,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function loadTabDataIndexedDB() {
+    if (!db) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['tabs'], 'readonly');
       const store = transaction.objectStore('tabs');
@@ -206,6 +228,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function saveEditorContentIndexedDB(tabId, content) {
+    if (!db) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['content'], 'readwrite');
       const store = transaction.objectStore('content');
@@ -217,6 +240,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function loadEditorContentIndexedDB(tabId) {
+    if (!db) return Promise.resolve('');
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['content'], 'readonly');
       const store = transaction.objectStore('content');
@@ -232,6 +256,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function deleteTabDataIndexedDB(tabId) {
+    if (!db) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['tabs'], 'readwrite');
       const store = transaction.objectStore('tabs');
@@ -243,6 +268,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function deleteEditorContentIndexedDB(tabId) {
+    if (!db) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['content'], 'readwrite');
       const store = transaction.objectStore('content');
@@ -251,6 +277,117 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject('Delete content error');
     });
+  }
+
+  function getFileNameFromPath(filePath) {
+    return filePath.split(/[/\\]/).pop() || filePath;
+  }
+
+  function findTabByFilePath(filePath) {
+    const entry = Object.entries(tabData).find(([, tab]) => tab.filePath === filePath);
+    return entry ? Number(entry[0]) : null;
+  }
+
+  function updateTabTitleUI(tabId, title) {
+    const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (tab) {
+      const span = tab.querySelector('span:not(.close-tab-btn)');
+      if (span) span.textContent = title;
+    }
+  }
+
+  function updateWindowTitle() {
+    if (!currentTab || !tabData[currentTab]) {
+      window.electron.send('update-window-title', { title: 'Sainte Devote', filePath: null });
+      return;
+    }
+    const title = tabData[currentTab].title || 'Untitled';
+    window.electron.send('update-window-title', {
+      title: `${title} — Sainte Devote`,
+      filePath: tabData[currentTab].filePath || null,
+    });
+  }
+
+  function loadRecentFiles() {
+    try {
+      return JSON.parse(localStorage.getItem(RECENT_FILES_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  }
+
+  function addToRecentFiles(filePath) {
+    const recent = loadRecentFiles().filter(p => p !== filePath);
+    recent.unshift(filePath);
+    localStorage.setItem(
+      RECENT_FILES_KEY,
+      JSON.stringify(recent.slice(0, MAX_RECENT_FILES)),
+    );
+  }
+
+  function scheduleFileAutosave(tabId, content) {
+    if (autosaveTimers[tabId]) {
+      clearTimeout(autosaveTimers[tabId]);
+    }
+    autosaveTimers[tabId] = setTimeout(() => {
+      const filePath = tabData[tabId]?.filePath;
+      if (filePath) {
+        window.electron.send('save-file-to-path', { filePath, content });
+      }
+      delete autosaveTimers[tabId];
+    }, 300);
+  }
+
+  async function bindTabToFile(tabId, filePath) {
+    const fileName = getFileNameFromPath(filePath);
+    tabData[tabId].filePath = filePath;
+    tabData[tabId].title = fileName;
+    updateTabTitleUI(tabId, fileName);
+    await Promise.all([
+      deleteTabDataIndexedDB(tabId),
+      deleteEditorContentIndexedDB(tabId),
+    ]);
+    await saveTabData();
+    addToRecentFiles(filePath);
+    updateWindowTitle();
+  }
+
+  function openFileFromPath(filePath, content) {
+    const existing = findTabByFilePath(filePath);
+    if (existing !== null) {
+      switchTab(existing);
+      return;
+    }
+    const title = getFileNameFromPath(filePath);
+    addTab(null, title, content, filePath);
+    addToRecentFiles(filePath);
+  }
+
+  async function openFileDialog() {
+    const files = await window.electron.invoke('open-file-dialog');
+    if (files && files.length > 0) {
+      files.forEach(({ filePath, content }) => openFileFromPath(filePath, content));
+    }
+  }
+
+  function saveCurrentTab() {
+    if (!currentTab) return;
+    if (tabData[currentTab]?.filePath) {
+      showNotification('Saved');
+    } else {
+      saveAsCurrentTab();
+    }
+  }
+
+  function saveAsCurrentTab(tabId = currentTab) {
+    if (!tabId) return;
+    pendingSaveAsTabId = tabId;
+    const content = editors[tabId]?.getValue() || '';
+    const tabTitle = tabData[tabId]?.title || `Untitled ${getDisplayTabNumber(tabId)}`;
+    const fileName = tabData[tabId]?.filePath
+      ? getFileNameFromPath(tabData[tabId].filePath)
+      : `${tabTitle}.md`;
+    window.electron.send('save-file', { content, fileName });
   }
 
   function initializeEditor(settings, tabId) {
@@ -276,16 +413,30 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         },
       });
 
-      loadEditorContentIndexedDB(tabId).then((savedContent) => {
-        if (savedContent && editors[tabId]) {
-          editors[tabId].setValue(savedContent);
+      if (tabData[tabId]?.filePath) {
+        const content = tabData[tabId].content || '';
+        if (editors[tabId]) {
+          editors[tabId].setValue(content);
         }
-      });
+      } else {
+        loadEditorContentIndexedDB(tabId).then((savedContent) => {
+          if (savedContent && editors[tabId]) {
+            editors[tabId].setValue(savedContent);
+          }
+        });
+      }
 
       editors[tabId].onDidChangeModelContent(async () => {
         if (editors[tabId]) {
           const content = editors[tabId].getValue();
-          await saveEditorContentIndexedDB(tabId, content);
+          if (tabData[tabId]) {
+            tabData[tabId].content = content;
+          }
+          if (tabData[tabId]?.filePath) {
+            scheduleFileAutosave(tabId, content);
+          } else {
+            await saveEditorContentIndexedDB(tabId, content);
+          }
         }
       });
 
@@ -370,7 +521,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  function addTab(tabId = null, title = null, content = null) {
+  function addTab(tabId = null, title = null, content = null, filePath = null) {
     if (tabId !== null) {
       tabId = Number(tabId);
       if (isNaN(tabId)) tabId = getNextAvailableTabId();
@@ -384,9 +535,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       title: '',
       content: content || '',
       order: currentOrder,
+      filePath: filePath || null,
     };
 
-    title = title || `Tab ${getDisplayTabNumber(tabId)}`;
+    title = title || `Untitled ${getDisplayTabNumber(tabId)}`;
     tabData[tabId].title = title;
 
     const tabs = document.getElementById('tabs');
@@ -412,7 +564,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     newEditor.dataset.tab = tabId;
     newEditor.style.display = 'none';
     editorContainer.appendChild(newEditor);
-    saveTabData();
+    if (!filePath) {
+      saveTabData();
+    }
 
     if (isPreview) {
       toggleMode();
@@ -486,6 +640,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
 
     tabHistory = [tabId, ...tabHistory.filter(id => id !== tabId)];
+    updateWindowTitle();
   }
 
   function getMarkdownHtml(content, tabId) {
@@ -531,18 +686,47 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
+  function clearPrematureTabs() {
+    document.querySelectorAll('#tabs .tab').forEach((el) => el.remove());
+    document.querySelectorAll('#editor-container .editor').forEach((el) => el.remove());
+    Object.keys(editors).forEach((id) => {
+      editors[id]?.dispose();
+      delete editors[id];
+    });
+    initializedEditors.clear();
+    Object.keys(tabData).forEach((id) => delete tabData[id]);
+    Object.keys(markdownCache).forEach((id) => delete markdownCache[id]);
+    currentTab = null;
+    activeTabElement = null;
+  }
+
   async function initializeTabs() {
-    await openDatabase();
-    await loadTabDataIndexedDB();
-    if (Object.keys(tabData).length > 0) {
-      const orderedTabs = getTabsByOrder();
-      for (const tab of orderedTabs) {
-        const content = await loadEditorContentIndexedDB(tab.id);
-        addTab(tab.id, tab.title, content);
+    if (initPromise) return initPromise;
+
+    initPromise = (async () => {
+      await ensureDatabase();
+      clearPrematureTabs();
+      await loadTabDataIndexedDB();
+      if (Object.keys(tabData).length > 0) {
+        const orderedTabs = getTabsByOrder();
+        for (const tab of orderedTabs) {
+          const content = await loadEditorContentIndexedDB(tab.id);
+          addTab(tab.id, tab.title, content);
+        }
+      } else if (pendingFileOpens.length === 0) {
+        addTab();
       }
-    } else {
-      addTab();
-    }
+      while (pendingFileOpens.length > 0) {
+        const pending = [...pendingFileOpens];
+        pendingFileOpens.length = 0;
+        for (const { filePath, content } of pending) {
+          openFileFromPath(filePath, content);
+        }
+      }
+      isInitialized = true;
+    })();
+
+    return initPromise;
   }
 
   function toggleTabBar() {
@@ -554,6 +738,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   async function saveTabData() {
+    await ensureDatabase();
     await saveTabDataIndexedDB();
   }
 
@@ -697,16 +882,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   async function saveAsMarkdown(tabId) {
-    try {
-      const content = editors[tabId]?.getValue() || '';
-      const tabTitle = tabData[tabId]?.title || `Tab ${tabId}`;
-      const fileName = `${tabTitle}.md`;
-
-      window.electron.send('save-file', { content, fileName });
-    } catch (error) {
-      console.error('Failed to save file:', error);
-      showNotification('Failed to save', 'error');
-    }
+    saveAsCurrentTab(tabId);
   }
 
   function showNotification(message, type = 'success') {
@@ -788,6 +964,21 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         closeTab(currentTab);
       }
     }
+
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'o') {
+      event.preventDefault();
+      openFileDialog();
+    }
+
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 's') {
+      event.preventDefault();
+      saveCurrentTab();
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'S') {
+      event.preventDefault();
+      saveAsCurrentTab();
+    }
   }, true);
 
   tabs.addEventListener('click', (event) => {
@@ -858,6 +1049,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   function renameTab(tabId) {
+    if (tabData[tabId]?.filePath) return;
+
     const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
     if (!tab) return;
 
@@ -871,7 +1064,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     tab.replaceChild(input, span);
 
     input.addEventListener('blur', () => {
-      const newTitle = input.value || `Tab ${getDisplayTabNumber(tabId)}`;
+      const newTitle = input.value || `Untitled ${getDisplayTabNumber(tabId)}`;
       span.textContent = newTitle;
       if (tab.contains(input)) {
         tab.replaceChild(span, input);
@@ -907,7 +1100,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  function showConfirmDialog(message) {
+  function showConfirmDialog(message, confirmLabel = 'Close') {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.style.cssText = `
@@ -946,6 +1139,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         margin: 0 0 24px 0;
         line-height: 1.5;
         font-size: 14px;
+        white-space: pre-line;
       `;
 
       const buttonContainer = document.createElement('div');
@@ -968,9 +1162,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         font-weight: 500;
       `;
 
-      const deleteBtn = document.createElement('button');
-      deleteBtn.textContent = 'Delete';
-      deleteBtn.style.cssText = `
+      const confirmBtn = document.createElement('button');
+      confirmBtn.textContent = confirmLabel;
+      confirmBtn.style.cssText = `
         padding: 8px 20px;
         border: 1px solid #dc2626;
         border-radius: 6px;
@@ -987,33 +1181,25 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         cancelBtn.style.color = '#d1d5db';
       }
 
-      const handleCancel = () => {
-        document.body.removeChild(overlay);
-        resolve(false);
+      const finish = (value) => {
+        document.removeEventListener('keydown', handleKeydown);
+        if (document.body.contains(overlay)) {
+          document.body.removeChild(overlay);
+        }
+        resolve(value);
       };
 
-      const handleDelete = () => {
-        document.body.removeChild(overlay);
-        resolve(true);
-      };
-
-      cancelBtn.addEventListener('click', handleCancel);
-      deleteBtn.addEventListener('click', handleDelete);
+      cancelBtn.addEventListener('click', () => finish(false));
+      confirmBtn.addEventListener('click', () => finish(true));
 
       const handleKeydown = (e) => {
         if (e.key === 'Escape') {
-          handleCancel();
+          finish(false);
         } else if (e.key === 'Enter') {
           if (document.activeElement === cancelBtn) {
-            handleCancel();
+            finish(false);
           } else {
-            handleDelete();
-          }
-        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          if (document.activeElement === deleteBtn) {
-            cancelBtn.focus();
-          } else {
-            deleteBtn.focus();
+            finish(true);
           }
         }
       };
@@ -1022,49 +1208,50 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
-          handleCancel();
+          finish(false);
         }
       });
 
-      buttonContainer.appendChild(deleteBtn);
+      buttonContainer.appendChild(confirmBtn);
       buttonContainer.appendChild(cancelBtn);
       dialog.appendChild(messageEl);
       dialog.appendChild(buttonContainer);
       overlay.appendChild(dialog);
       document.body.appendChild(overlay);
 
-      setTimeout(() => {
-        cancelBtn.focus();
-      }, 10);
-
-      const cleanup = () => {
-        document.removeEventListener('keydown', handleKeydown);
-      };
-
-      const originalResolve = resolve;
-      resolve = (value) => {
-        cleanup();
-        originalResolve(value);
-      };
+      setTimeout(() => cancelBtn.focus(), 10);
     });
   }
 
   async function closeTab(tabId) {
     tabId = Number(tabId);
 
-    const tabTitle = tabData[tabId]?.title || `Tab ${tabId}`;
-    const confirmMessage = `Are you sure you want to delete "${tabTitle}"?\n\nUnsaved changes will be lost.`;
+    const tab = tabData[tabId];
+    if (!tab) return;
 
-    const confirmed = await showConfirmDialog(confirmMessage);
-    if (!confirmed) {
-      return;
+    const isScratchTab = !tab.filePath;
+    const tabTitle = tab.title || `Untitled ${getDisplayTabNumber(tabId)}`;
+
+    if (isScratchTab) {
+      const content = editors[tabId]?.getValue() ?? tab.content ?? '';
+      if (content.trim().length > 0) {
+        const confirmed = await showConfirmDialog(
+          `Close "${tabTitle}"?\n\nThis scratch tab will be permanently deleted.`,
+        );
+        if (!confirmed) return;
+      }
     }
 
-    const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
-    const editor = document.querySelector(`.editor[data-tab="${tabId}"]`);
+    const filePath = tab.filePath;
+    if (filePath) {
+      window.electron.send('close-file', filePath);
+    }
 
-    if (tab) tab.remove();
-    if (editor) editor.remove();
+    const tabEl = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    const editorEl = document.querySelector(`.editor[data-tab="${tabId}"]`);
+
+    if (tabEl) tabEl.remove();
+    if (editorEl) editorEl.remove();
 
     if (editors[tabId]) {
       editors[tabId].dispose();
@@ -1073,14 +1260,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     delete tabData[tabId];
     delete markdownCache[tabId];
 
-    try {
-      await Promise.all([
-        deleteTabDataIndexedDB(tabId),
-        deleteEditorContentIndexedDB(tabId),
-      ]);
-      await saveTabData();
-    } catch (error) {
-      console.error('Error deleting data from IndexedDB:', error);
+    if (isScratchTab) {
+      try {
+        await Promise.all([
+          deleteTabDataIndexedDB(tabId),
+          deleteEditorContentIndexedDB(tabId),
+        ]);
+        await saveTabData();
+      } catch (error) {
+        console.error('Error deleting data from IndexedDB:', error);
+      }
     }
 
     initializedEditors.delete(tabId);
@@ -1105,6 +1294,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         }
       }
     }
+
+    updateWindowTitle();
   }
 
   previewContainer.style.display = 'none';
@@ -1359,6 +1550,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         fontSize: settings.fontSize,
       };
       systemIsDark = settings.theme === 'vs-dark';
+      if (settings.useNativeTitleBar) {
+        document.body.classList.add('native-titlebar');
+      }
       applyEditorFont();
       applyPreviewFont();
       applyTheme();
@@ -1366,8 +1560,42 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
+  window.electron.receive('file-opened', ({ filePath, content }) => {
+    if (!isInitialized) {
+      pendingFileOpens.push({ filePath, content });
+    } else {
+      openFileFromPath(filePath, content);
+    }
+  });
+
+  window.electron.receive('menu-action', (action) => {
+    switch (action) {
+    case 'new-tab':
+      addTab();
+      break;
+    case 'open-file':
+      openFileDialog();
+      break;
+    case 'save':
+      saveCurrentTab();
+      break;
+    case 'save-as':
+      saveAsCurrentTab();
+      break;
+    case 'close-tab':
+      if (currentTab) closeTab(currentTab);
+      break;
+    default:
+      break;
+    }
+  });
+
   window.electron.receive('save-file-success', (filePath) => {
-    const fileName = filePath.split('/').pop().split('\\').pop();
+    if (pendingSaveAsTabId !== null) {
+      bindTabToFile(pendingSaveAsTabId, filePath);
+      pendingSaveAsTabId = null;
+    }
+    const fileName = getFileNameFromPath(filePath);
     showNotification(`File saved: ${fileName}`);
   });
 
@@ -1409,6 +1637,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     const staticCommands = [
       { id: 'new-tab', type: 'command', label: 'New Tab', detail: 'Create a new markdown tab', icon: icons.plus, action: () => addTab() },
+      { id: 'open-file', type: 'command', label: 'Open File', detail: 'Open a markdown file from disk', icon: icons.file, action: () => openFileDialog() },
+      { id: 'save', type: 'command', label: 'Save', detail: 'Save the current tab', icon: icons.save, action: () => saveCurrentTab() },
+      { id: 'save-as', type: 'command', label: 'Save As', detail: 'Save the current tab to a file', icon: icons.save, action: () => saveAsCurrentTab() },
+      {
+        id: 'close-tab', type: 'command', label: 'Close Tab', detail: 'Close the current tab', icon: icons.trash, action: () => {
+          if (currentTab) {
+            setTimeout(() => closeTab(currentTab), 200);
+          }
+        }
+      },
       {
         id: 'delete-tab', type: 'command', label: 'Delete Tab', detail: 'Close and delete the current tab', icon: icons.trash, action: () => {
           if (currentTab) {
@@ -1431,7 +1669,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       },
       { id: 'toggle-preview', type: 'command', label: 'Toggle Editor/Preview Mode', detail: 'Switch between markdown editor and preview', icon: icons.eye, action: () => toggleMode() },
       { id: 'toggle-tabs', type: 'command', label: 'Toggle Tab Bar Visibility', detail: 'Show or hide the tab bar', icon: icons.eye, action: () => toggleTabBar() },
-      { id: 'export-current-md', type: 'command', label: 'Save Tab as Markdown', detail: 'Save current tab as a .md file', icon: icons.save, action: () => { if (currentTab) saveAsMarkdown(currentTab); } },
+      { id: 'export-current-md', type: 'command', label: 'Save Tab as Markdown', detail: 'Save current tab as a .md file', icon: icons.save, action: () => { if (currentTab) saveAsCurrentTab(currentTab); } },
       { id: 'copy-clipboard', type: 'command', label: 'Copy Tab to Clipboard', detail: 'Copy current tab content to clipboard', icon: icons.copy, action: () => { if (currentTab) copyToClipboard(currentTab); } },
       { id: 'backup-export-all', type: 'command', label: 'Backup: Export All Tabs (.zip)', detail: 'Export all tabs as a ZIP file', icon: icons.archive, action: () => exportAllTabs() },
       { id: 'open-settings', type: 'command', label: 'Open Settings', detail: 'Editor / preview fonts and theme', icon: icons.settings, action: () => showSettings() },
@@ -1443,6 +1681,23 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     staticCommands.forEach(cmd => {
       if (isMatch(cmd.label)) {
         results.push(cmd);
+      }
+    });
+
+    const recentFiles = loadRecentFiles();
+    recentFiles.forEach(filePath => {
+      const fileName = getFileNameFromPath(filePath);
+      if (isMatch(fileName) || isMatch('recent')) {
+        results.push({
+          id: `recent-${filePath}`,
+          type: 'command',
+          label: `Recent: ${fileName}`,
+          detail: filePath,
+          icon: icons.file,
+          action: () => {
+            window.electron.send('open-dropped-file', filePath);
+          },
+        });
       }
     });
 
@@ -1732,5 +1987,34 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   window.electron.onExportRequest(() => {
     exportAllTabs();
+  });
+
+  const dropOverlay = document.getElementById('drop-overlay');
+
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (dropOverlay) dropOverlay.classList.add('visible');
+  });
+
+  document.addEventListener('dragleave', (e) => {
+    if (e.relatedTarget === null && dropOverlay) {
+      dropOverlay.classList.remove('visible');
+    }
+  });
+
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (dropOverlay) dropOverlay.classList.remove('visible');
+
+    const files = [...e.dataTransfer.files].filter(f =>
+      /\.(md|markdown|txt)$/i.test(f.name),
+    );
+
+    files.forEach(f => {
+      const filePath = window.electron.getFilePath(f);
+      if (filePath) {
+        window.electron.send('open-dropped-file', filePath);
+      }
+    });
   });
 });

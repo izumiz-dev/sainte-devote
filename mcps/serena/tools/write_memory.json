@@ -1,0 +1,30 @@
+{
+  "name": "write_memory",
+  "description": "Write information about this project that can be useful for future tasks in md format.\nThe name should be meaningful and can include \"/\" to organize into topics.\nIf explicitly instructed, use the \"global/\" prefix for writing a memory that is shared across projects.\nReferences to other memories should be inside backticks and prefixed with mem:,\ne.g., `mem:auth`.",
+  "inputSchema": {
+    "properties": {
+      "memory_name": {
+        "title": "Memory Name",
+        "type": "string",
+        "description": "Memory name."
+      },
+      "content": {
+        "title": "Content",
+        "type": "string",
+        "description": "Memory content, utf8-encoded."
+      },
+      "max_chars": {
+        "default": -1,
+        "title": "Max Chars",
+        "type": "integer",
+        "description": "See other tools."
+      }
+    },
+    "required": [
+      "memory_name",
+      "content"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

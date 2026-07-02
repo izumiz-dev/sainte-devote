@@ -17,6 +17,16 @@
     "appId": "dev.izumiz.sainte-devote",
     "productName": "Sainte Devote",
     "icon": "assets/icon.png",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown File",
+        "description": "Markdown Document",
+        "mimeType": "text/markdown",
+        "role": "Editor",
+        "icon": "assets/icon"
+      }
+    ],
     "mac": {
       "target": [
         "zip",
@@ -33,12 +43,22 @@
       ],
       "icon": "assets/icon.ico"
     },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Utility",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "mimeTypes": [
+        "text/markdown",
+        "text/x-markdown"
+      ]
     }
   },
   "keywords": [],
