@@ -1,3 +1,11 @@
+# Code signing / notarization secrets (never commit these)
+*.p12
+*.p8
+*.cer
+*.csr
+*.key
+!build/entitlements*.plist
+
 # Logs
 logs
 *.log
