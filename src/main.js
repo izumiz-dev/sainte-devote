@@ -427,6 +427,11 @@ function createWindow() {
   });
 
   win.webContents.on('did-finish-load', sendMonacoSettings);
+  // A (re)load wipes the renderer's IPC listeners; hold queued file opens
+  // until it reports ready again.
+  win.webContents.on('did-start-loading', () => {
+    rendererReady = false;
+  });
   win.loadFile(path.join(__dirname, '..', 'index.html'));
 
   const isDark = nativeTheme.shouldUseDarkColors;
@@ -470,17 +475,17 @@ function sendMonacoSettings() {
 }
 
 let hasProcessedStartupFiles = false;
+// 'file-opened' sent before the renderer's IPC listeners exist is silently
+// dropped, and those listeners are only registered after Monaco's AMD modules
+// finish loading — later than did-finish-load. So queued opens are flushed
+// only once the renderer says it is ready.
+let rendererReady = false;
 
-function processPendingFileOpens() {
-  if (!win || win.isDestroyed() || hasProcessedStartupFiles) return;
-  hasProcessedStartupFiles = true;
-
-  const argvPaths = extractFilePathsFromArgv(process.argv);
-  const allPaths = [...filePathsToOpen, ...argvPaths];
-  filePathsToOpen.length = 0;
+function flushPendingFileOpens() {
+  if (!rendererReady || !win || win.isDestroyed()) return;
 
   const seen = new Set();
-  allPaths.forEach(fp => {
+  filePathsToOpen.splice(0).forEach(fp => {
     if (!seen.has(fp)) {
       seen.add(fp);
       openFileInRenderer(fp);
@@ -488,18 +493,35 @@ function processPendingFileOpens() {
   });
 }
 
+function showAndFocusWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+ipcMain.on('renderer-ready', () => {
+  rendererReady = true;
+  if (!hasProcessedStartupFiles) {
+    hasProcessedStartupFiles = true;
+    filePathsToOpen.push(...extractFilePathsFromArgv(process.argv));
+  }
+  flushPendingFileOpens();
+});
+
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    const filePaths = extractFilePathsFromArgv(argv);
-    filePaths.forEach(fp => openFileInRenderer(fp));
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+    filePathsToOpen.push(...extractFilePathsFromArgv(argv));
+    if (!win || win.isDestroyed()) {
+      if (app.isReady()) createWindow();
+    } else {
+      flushPendingFileOpens();
     }
+    showAndFocusWindow();
   });
 
   if (process.platform === 'darwin') {
@@ -507,18 +529,23 @@ if (!gotTheLock) {
       event.preventDefault();
       const safePath = validateReadableFilePath(filePath);
       if (!safePath) return;
-      if (win && !win.isDestroyed()) {
-        openFileInRenderer(safePath);
+      filePathsToOpen.push(safePath);
+      // Before app ready: whenReady creates the window and the renderer's
+      // ready signal flushes the queue.
+      if (!app.isReady()) return;
+      if (!win || win.isDestroyed()) {
+        // App alive in the Dock with all windows closed.
+        createWindow();
       } else {
-        filePathsToOpen.push(safePath);
+        flushPendingFileOpens();
       }
+      showAndFocusWindow();
     });
   }
 
   app.whenReady().then(() => {
     loadRecentFilesFromDisk();
     createWindow();
-    win.webContents.on('did-finish-load', processPendingFileOpens);
   });
 }
 

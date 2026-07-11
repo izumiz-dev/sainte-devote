@@ -11,6 +11,7 @@ const SEND_CHANNELS = new Set([
   'set-title-bar-theme',
   'export-tabs-data',
   'update-window-title',
+  'renderer-ready',
 ]);
 
 const RECEIVE_CHANNELS = new Set([

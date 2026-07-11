@@ -2015,4 +2015,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     window.electron.openDroppedFiles(files);
   });
+
+  // All IPC listeners above are registered; the main process holds queued
+  // file-open requests until this signal.
+  window.electron.send('renderer-ready');
 });
