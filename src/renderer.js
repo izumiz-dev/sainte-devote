@@ -137,6 +137,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const autosaveTimers = {};
   let pendingSaveAsTabId = null;
   let isInitialized = false;
+  // Tabs currently showing an unresolved "changed on disk" conflict banner —
+  // autosave is paused for these until the user picks reload-or-keep.
+  const conflictTabs = new Set();
+  // tabId -> dismiss function of that tab's live conflict banner, so a newer
+  // conflict supersedes the old banner instead of stacking on top of it.
+  const conflictBannerDismiss = {};
+  // Guards onDidChangeModelContent while applyExternalContent() calls
+  // setValue(), so the reload itself isn't mistaken for a user edit.
+  let isApplyingExternalContent = false;
   const pendingFileOpens = [];
 
   const dbName = 'SainteDevoteDB';
@@ -332,6 +341,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const fileName = getFileNameFromPath(filePath);
     tabData[tabId].filePath = filePath;
     tabData[tabId].readOnly = false;
+    tabData[tabId].fileMissing = false;
     tabData[tabId].title = fileName;
     updateTabTitleUI(tabId, fileName);
     const tabEl = document.querySelector(`.tab[data-tab="${tabId}"]`);
@@ -347,9 +357,47 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     updateWindowTitle();
   }
 
+  // Replaces a tab's content with what's on disk (initial open, reopen of an
+  // already-open file, or resolving a "changed on disk" conflict) while
+  // preserving cursor/scroll position and refreshing the preview/cache.
+  function applyExternalContent(tabId, content) {
+    tabData[tabId].content = content;
+
+    const editor = editors[tabId];
+    if (editor) {
+      const model = editor.getModel();
+      const viewState = editor.saveViewState();
+      isApplyingExternalContent = true;
+      if (model) {
+        // Replace via an edit operation rather than setValue() so the reload
+        // lands on the undo stack instead of destroying it.
+        model.pushStackElement();
+        model.pushEditOperations(
+          [],
+          [{ range: model.getFullModelRange(), text: content }],
+          () => null,
+        );
+        model.pushStackElement();
+      } else {
+        editor.setValue(content);
+      }
+      isApplyingExternalContent = false;
+      if (viewState) editor.restoreViewState(viewState);
+    }
+
+    if (tabId === currentTab && isPreview) {
+      const htmlContent = getMarkdownHtml(content, tabId);
+      previewContainer.innerHTML = htmlContent;
+    }
+  }
+
   function openFileFromPath(filePath, content, readOnly = false) {
     const existing = findTabByFilePath(filePath);
     if (existing !== null) {
+      // Reopening an already-open file (dialog, drag-drop, recent list, or a
+      // second `open` on the same path) — treat the fresh disk read as a
+      // sync instead of just switching tabs and discarding it.
+      handleExternalFileContent(existing, content);
       switchTab(existing);
       return;
     }
@@ -358,6 +406,65 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (readOnly) {
       showNotification('Opened read-only — use Save As to enable autosave');
     }
+  }
+
+  // Applies content that main confirmed is what's currently on disk for this
+  // tab's file — either silently (no local edits are at risk) or via a
+  // reload-or-keep prompt when the user has unsaved/in-flight local changes.
+  function handleExternalFileContent(tabId, content) {
+    const tab = tabData[tabId];
+    if (!tab) return;
+
+    // Edits made while the file was missing bypass autosaveTimers (autosave
+    // is paused), so a bare timer check would silently discard them when the
+    // file reappears — treat any reappearance with different content as a
+    // conflict.
+    const wasMissing = tab.fileMissing;
+    tab.fileMissing = false;
+
+    if (content === tab.content) return;
+
+    const hasPendingLocalEdit = Boolean(autosaveTimers[tabId]) || wasMissing;
+    if (!hasPendingLocalEdit && !conflictTabs.has(tabId)) {
+      applyExternalContent(tabId, content);
+      return;
+    }
+
+    if (autosaveTimers[tabId]) {
+      // The pending autosave holds a stale snapshot; letting it fire would
+      // overwrite the external change we just detected.
+      clearTimeout(autosaveTimers[tabId]);
+      delete autosaveTimers[tabId];
+    }
+    conflictTabs.add(tabId);
+
+    // An earlier banner for this tab holds an outdated disk snapshot in its
+    // Reload closure; clicking it after this newer change would roll the tab
+    // back. Replace it.
+    conflictBannerDismiss[tabId]?.();
+
+    const resolveConflict = () => {
+      delete conflictBannerDismiss[tabId];
+      conflictTabs.delete(tabId);
+    };
+    const fileName = getFileNameFromPath(tab.filePath);
+    conflictBannerDismiss[tabId] = showActionNotification(`"${fileName}" changed on disk. Keep your edits or reload?`, [
+      {
+        label: 'Reload from disk',
+        action: () => {
+          resolveConflict();
+          applyExternalContent(tabId, content);
+        },
+      },
+      {
+        label: 'Keep my version',
+        action: () => {
+          resolveConflict();
+          const currentContent = editors[tabId]?.getValue() ?? tab.content;
+          window.electron.send('save-file-to-path', { filePath: tab.filePath, content: currentContent });
+        },
+      },
+    ]);
   }
 
   async function openFileDialog() {
@@ -430,9 +537,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           if (tabData[tabId]) {
             tabData[tabId].content = content;
           }
-          if (tabData[tabId]?.filePath && !tabData[tabId]?.readOnly) {
+          if (isApplyingExternalContent) {
+            // Programmatic setValue() from applyExternalContent() — not a
+            // real user edit, so don't autosave or re-trigger a conflict.
+            return;
+          }
+          if (
+            tabData[tabId]?.filePath &&
+            !tabData[tabId]?.readOnly &&
+            !tabData[tabId]?.fileMissing &&
+            !conflictTabs.has(tabId)
+          ) {
             scheduleFileAutosave(tabId, content);
-          } else {
+          } else if (!tabData[tabId]?.filePath) {
             await saveEditorContentIndexedDB(tabId, content);
           }
         }
@@ -919,6 +1036,73 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         }
       }, 300);
     }, 3000);
+  }
+
+  // Like showNotification, but stays on screen (no auto-dismiss) and offers
+  // action buttons — used for the "changed on disk" conflict prompt, where
+  // silently picking a side for the user would risk losing their edits.
+  function showActionNotification(message, buttons) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 50px;
+      right: 20px;
+      background: #b45309;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10001;
+      font-size: 14px;
+      max-width: 360px;
+      transition: all 0.3s ease;
+      transform: translateX(100%);
+    `;
+
+    const text = document.createElement('div');
+    text.textContent = message;
+    text.style.marginBottom = '10px';
+    notification.appendChild(text);
+
+    const buttonRow = document.createElement('div');
+    buttonRow.style.cssText = 'display: flex; gap: 8px;';
+
+    function dismiss() {
+      notification.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        if (document.body.contains(notification)) {
+          document.body.removeChild(notification);
+        }
+      }, 300);
+    }
+
+    buttons.forEach(({ label, action }) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = `
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 13px;
+        cursor: pointer;
+      `;
+      btn.addEventListener('click', () => {
+        action();
+        dismiss();
+      });
+      buttonRow.appendChild(btn);
+    });
+
+    notification.appendChild(buttonRow);
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      notification.style.transform = 'translateX(0)';
+    }, 10);
+
+    return dismiss;
   }
 
   tabs.addEventListener('contextmenu', (event) => {
@@ -1569,6 +1753,25 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     } else {
       openFileFromPath(filePath, content, readOnly);
     }
+  });
+
+  window.electron.receive('file-changed-externally', ({ filePath, content }) => {
+    const tabId = findTabByFilePath(filePath);
+    if (tabId !== null) {
+      handleExternalFileContent(tabId, content);
+    }
+  });
+
+  window.electron.receive('file-removed-externally', ({ filePath }) => {
+    const tabId = findTabByFilePath(filePath);
+    if (tabId === null) return;
+    tabData[tabId].fileMissing = true;
+    if (autosaveTimers[tabId]) {
+      clearTimeout(autosaveTimers[tabId]);
+      delete autosaveTimers[tabId];
+    }
+    const fileName = getFileNameFromPath(filePath);
+    showNotification(`"${fileName}" was deleted on disk — use Save As to re-save`, 'error');
   });
 
   window.electron.receive('menu-action', (action) => {

@@ -22,6 +22,8 @@ const RECEIVE_CHANNELS = new Set([
   'request-export-all',
   'file-opened',
   'menu-action',
+  'file-changed-externally',
+  'file-removed-externally',
 ]);
 
 const INVOKE_CHANNELS = new Set([

@@ -10,6 +10,7 @@ const {
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const JSZip = require('jszip');
 
 const { O_RDONLY, O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW } = fs.constants;
@@ -243,6 +244,160 @@ function readFileContent(filePath) {
   }
 }
 
+// --- External change detection ---
+//
+// Files opened in a tab are watched so edits made in another program (VS
+// Code, vim, etc.) are reflected here instead of being silently clobbered by
+// our own 300ms autosave. We watch the parent *directory* rather than the
+// file itself: editors that save atomically (write a temp file, then rename
+// over the target) replace the inode, which ends a direct file watch on most
+// platforms. Directory watches survive that and work uniformly across
+// FSEvents (macOS), ReadDirectoryChangesW (Windows) and inotify (Linux).
+const watchedFiles = new Map(); // safePath -> { dir, base }
+const dirWatchers = new Map(); // dir -> FSWatcher
+const lastKnownContentHashes = new Map(); // safePath -> sha256 hex
+const pendingChangeChecks = new Map(); // safePath -> Timeout
+const CHANGE_CHECK_DEBOUNCE_MS = 200;
+const CHANGE_CHECK_RETRY_DELAY_MS = 100;
+
+function hashContent(content) {
+  return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+}
+
+// Records what we just read/wrote so the next watcher event (very likely our
+// own save, or an editor's redundant no-op save) can be recognized and
+// ignored instead of round-tripped to the renderer.
+function rememberFileContent(safePath, content) {
+  lastKnownContentHashes.set(safePath, hashContent(content));
+}
+
+function basenameForCompare(filePath) {
+  const base = path.basename(filePath);
+  // Watch event filenames are compared case-insensitively on the platforms
+  // whose default filesystems are case-insensitive.
+  return process.platform === 'darwin' || process.platform === 'win32'
+    ? base.toLowerCase()
+    : base;
+}
+
+function scheduleExternalChangeCheck(safePath) {
+  clearTimeout(pendingChangeChecks.get(safePath));
+  pendingChangeChecks.set(
+    safePath,
+    setTimeout(() => {
+      pendingChangeChecks.delete(safePath);
+      checkFileForExternalChange(safePath);
+    }, CHANGE_CHECK_DEBOUNCE_MS),
+  );
+}
+
+function checkFileForExternalChange(safePath, attempt = 0) {
+  if (!watchedFiles.has(safePath) || !win || win.isDestroyed()) return;
+
+  // Re-validate before every read, like every other fs access in this file —
+  // a parent directory swapped for a symlink (or the file replaced by a
+  // non-regular file) after watch time would otherwise slip past O_NOFOLLOW.
+  if (!validateReadableFilePath(safePath)) {
+    if (!fs.existsSync(safePath)) {
+      if (lastKnownContentHashes.has(safePath)) {
+        lastKnownContentHashes.delete(safePath);
+        win.webContents.send('file-removed-externally', { filePath: safePath });
+      }
+    }
+    // Present but invalid: never read it.
+    return;
+  }
+
+  let content;
+  try {
+    content = readFileNoFollow(safePath);
+  } catch (error) {
+    // Likely a transient lock from the writing process (common on Windows).
+    // Retry a couple of times before giving up on this event.
+    if (attempt < 2) {
+      setTimeout(
+        () => checkFileForExternalChange(safePath, attempt + 1),
+        CHANGE_CHECK_RETRY_DELAY_MS,
+      );
+    } else {
+      console.error('Failed to read externally-changed file:', error);
+    }
+    return;
+  }
+
+  const newHash = hashContent(content);
+  if (lastKnownContentHashes.get(safePath) === newHash) return;
+
+  lastKnownContentHashes.set(safePath, newHash);
+  win.webContents.send('file-changed-externally', { filePath: safePath, content });
+}
+
+function handleDirWatchEvent(dir, eventFilename) {
+  const targetBase = eventFilename ? basenameForCompare(eventFilename) : null;
+  for (const [safePath, info] of watchedFiles) {
+    if (info.dir !== dir) continue;
+    // Some platforms omit the filename on certain events; when that happens
+    // fall back to checking every watched file in this directory.
+    if (targetBase !== null && basenameForCompare(info.base) !== targetBase) continue;
+    scheduleExternalChangeCheck(safePath);
+  }
+}
+
+function watchFileForExternalChanges(safePath) {
+  if (watchedFiles.has(safePath)) return;
+
+  const dir = path.dirname(safePath);
+  watchedFiles.set(safePath, { dir, base: path.basename(safePath) });
+
+  if (dirWatchers.has(dir)) return;
+  try {
+    const watcher = fs.watch(dir, (_eventType, filename) => {
+      handleDirWatchEvent(dir, filename);
+    });
+    watcher.on('error', (error) => {
+      // Removable/network drives can start failing mid-session; drop the
+      // watcher and rely on the focus-triggered fallback check instead.
+      console.warn(`File watcher error for ${dir}:`, error.message);
+      watcher.close();
+      dirWatchers.delete(dir);
+    });
+    dirWatchers.set(dir, watcher);
+  } catch (error) {
+    // Focus-triggered rechecks still cover this file.
+    console.warn(`Failed to watch directory ${dir}:`, error.message);
+  }
+}
+
+function unwatchFile(filePath) {
+  if (typeof filePath !== 'string') return;
+  const safePath = validateReadableFilePath(filePath) || path.resolve(filePath);
+  const info = watchedFiles.get(safePath);
+  if (!info) return;
+
+  watchedFiles.delete(safePath);
+  lastKnownContentHashes.delete(safePath);
+  clearTimeout(pendingChangeChecks.get(safePath));
+  pendingChangeChecks.delete(safePath);
+
+  // Close the directory watcher only when no other watched file shares the
+  // directory. Derived from watchedFiles itself (rather than a refcount)
+  // so it cannot drift when fs.watch failed for one of the files.
+  for (const other of watchedFiles.values()) {
+    if (other.dir === info.dir) return;
+  }
+  const watcher = dirWatchers.get(info.dir);
+  if (watcher) {
+    watcher.close();
+    dirWatchers.delete(info.dir);
+  }
+}
+
+function recheckAllWatchedFiles() {
+  for (const safePath of watchedFiles.keys()) {
+    scheduleExternalChangeCheck(safePath);
+  }
+}
+
 function extractFilePathsFromArgv(argv) {
   const startIndex = isDev ? 2 : 1;
   return argv
@@ -261,6 +416,8 @@ function openFileInRenderer(filePath, { grantWriteAccess = true } = {}) {
 
   if (grantWriteAccess) activeFilePaths.add(safePath);
   addToRecentFiles(safePath);
+  rememberFileContent(safePath, content);
+  watchFileForExternalChanges(safePath);
   win.webContents.send('file-opened', { filePath: safePath, content, readOnly: !grantWriteAccess });
   app.addRecentDocument(safePath);
 }
@@ -565,6 +722,11 @@ app.on('before-quit', () => {
   nativeTheme.removeListener('updated', handleThemeChange);
 });
 
+// Directory watchers can miss events (system sleep, network drives), so
+// re-check everything whenever the window regains focus as a safety net —
+// the same belt-and-suspenders approach editors like VS Code use.
+app.on('browser-window-focus', recheckAllWatchedFiles);
+
 ipcMain.on('open-external', (event, url) => {
   openExternalSafely(url);
 });
@@ -595,6 +757,8 @@ ipcMain.handle('open-file-dialog', async () => {
       if (content !== null) {
         activeFilePaths.add(safePath);
         addToRecentFiles(safePath);
+        rememberFileContent(safePath, content);
+        watchFileForExternalChanges(safePath);
         files.push({ filePath: safePath, content });
         app.addRecentDocument(safePath);
       }
@@ -619,6 +783,7 @@ ipcMain.on('save-file-to-path', (event, { filePath, content }) => {
     }
     writeFileNoFollow(safePath, content);
     addToRecentFiles(safePath);
+    rememberFileContent(safePath, content);
     app.addRecentDocument(safePath);
   } catch (error) {
     console.error('Autosave error:', error);
@@ -628,6 +793,7 @@ ipcMain.on('save-file-to-path', (event, { filePath, content }) => {
 
 ipcMain.on('close-file', (event, filePath) => {
   removeFromActiveFilePaths(filePath);
+  unwatchFile(filePath);
 });
 
 ipcMain.handle('open-dropped-files', async (_event, filePaths) => {
@@ -685,6 +851,8 @@ ipcMain.on('save-file', async (event, { content, fileName }) => {
       writeFileNoFollow(writePath, content);
       activeFilePaths.add(writePath);
       addToRecentFiles(writePath);
+      rememberFileContent(writePath, content);
+      watchFileForExternalChanges(writePath);
       app.addRecentDocument(writePath);
       event.reply('save-file-success', writePath);
     }
