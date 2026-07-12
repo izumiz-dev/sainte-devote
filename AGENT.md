@@ -30,9 +30,9 @@ Sainte Devote is a minimalist text editor built with Electron and Monaco Editor.
 
 ### Main Components
 
-- **Main Process** (`src/main.js`) - Electron main process that creates the application window, handles theme switching, and loads Monaco settings from `monacorc.json`
-- **Renderer Process** (`src/renderer.js`) - UI logic that initializes Monaco Editor, implements markdown preview, and manages localStorage persistence
-- **Preload Script** (`src/preload.js`) - Security layer for IPC communication between main and renderer processes
+- **Main Process** (`src/main.js`) - Electron main process that creates the application window, handles theme switching, file open/save and external-file-change watching, and loads Monaco settings from `monacorc.json`
+- **Renderer Process** (`src/renderer.js`) - UI logic that initializes Monaco Editor, implements tabs and markdown preview, and manages persistence (IndexedDB for scratch tabs, disk autosave for file-bound tabs, localStorage for settings)
+- **Preload Script** (`src/preload.js`) - Security layer for IPC communication between main and renderer processes (allowlisted channels)
 
 ### Key Files
 
@@ -43,10 +43,10 @@ Sainte Devote is a minimalist text editor built with Electron and Monaco Editor.
 
 ### Application Flow
 
-1. Main process creates Electron window (400x600) with security features enabled
-2. Renderer process initializes Monaco Editor with settings from `monacorc.json`
-3. Single toggle button (🔄️) switches between edit and preview modes
-4. Content is automatically saved to localStorage
+1. Main process creates Electron window (1000x700) with security features enabled
+2. Renderer process initializes Monaco Editor with settings from `monacorc.json` and signals `renderer-ready`; main then flushes queued file opens
+3. Toggle switches between edit and preview modes
+4. Content is autosaved — scratch tabs to IndexedDB, file-bound tabs to their file (with external-change detection and a reload-or-keep conflict banner)
 5. Theme switching follows system preferences (dark/light)
 
 ### Security Configuration

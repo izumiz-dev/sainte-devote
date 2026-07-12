@@ -13,6 +13,10 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
     -   **Editor**: Integrated Monaco Editor for Markdown and code editing.
     -   **Preview**: Code block highlighting using `highlight.js`.
 -   **Export**: Export all open tabs into a single `.zip` file.
+-   **File Handling**:
+    -   Open `.md` / `.markdown` / `.txt` files via the open dialog, drag & drop, the recent-files list, or directly from Finder / Explorer.
+    -   Tabs bound to a file are autosaved back to disk as you type.
+    -   Changes made by other programs are detected and synced into the open tab. If you have edits in flight, a banner lets you choose **Reload from disk** or **Keep my version**; deleting the file on disk pauses autosave until you Save As.
 -   **Tab Management**:
     -   Draggable tab reordering.
     -   Inline tab renaming.
