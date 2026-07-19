@@ -10,7 +10,13 @@
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
     "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint:fix": "eslint src/ --fix",
+    "lint:tauri": "eslint frontend/src scripts/vendor.mjs --max-warnings 0",
+    "check:tauri": "pnpm lint:tauri && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
+    "vendor": "node scripts/vendor.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "node scripts/vendor.mjs && tauri dev",
+    "tauri:build": "node scripts/vendor.mjs && tauri build"
   },
   "build": {
     "publish": null,
@@ -85,6 +91,7 @@
     "setimmediate": "^1.0.5"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "concurrently": "^8.2.1",
     "cross-env": "^7.0.3",
     "dmg-builder": "^26.15.0",

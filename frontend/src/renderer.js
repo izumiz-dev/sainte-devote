@@ -1,7 +1,7 @@
 require.config({
   paths: {
-    vs: 'node_modules/monaco-editor/min/vs',
-    marked: 'node_modules/marked/marked.min',
+    vs: 'vendor/monaco-editor/min/vs',
+    marked: 'vendor/marked/marked.min',
   },
 });
 
@@ -625,12 +625,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const markdownCssLink = document.getElementById('github-markdown-css');
     if (isDark) {
       markdownCssLink.href =
-        'node_modules/github-markdown-css/github-markdown-dark.css';
-      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css';
+        'vendor/github-markdown-css/github-markdown-dark.css';
+      document.getElementById('highlight-theme').href = 'vendor/@highlightjs/cdn-assets/styles/github-dark.min.css';
     } else {
       markdownCssLink.href =
-        'node_modules/github-markdown-css/github-markdown-light.css';
-      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github.min.css';
+        'vendor/github-markdown-css/github-markdown-light.css';
+      document.getElementById('highlight-theme').href = 'vendor/@highlightjs/cdn-assets/styles/github.min.css';
     }
 
     const newTheme = isDark ? 'vs-dark' : 'vs-light';
@@ -2224,6 +2224,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     );
 
     window.electron.openDroppedFiles(files);
+  });
+
+  // Tauri (WKWebView/WebView2): the browser-level drop above can't read file
+  // paths (e.dataTransfer.files has no .path), so drag-drop is handled on the
+  // Rust side via on_drag_drop_event. The backend drives this overlay and
+  // emits file-opened directly; these listeners just keep the overlay in sync.
+  // In Electron the events below are never emitted, so the handlers are inert.
+  window.electron.receive('drop-overlay-show', () => {
+    if (dropOverlay) dropOverlay.classList.add('visible');
+  });
+  window.electron.receive('drop-overlay-hide', () => {
+    if (dropOverlay) dropOverlay.classList.remove('visible');
   });
 
   // All IPC listeners above are registered; the main process holds queued

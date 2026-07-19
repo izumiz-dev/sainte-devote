@@ -43,7 +43,7 @@ OS WebView 上でほぼそのまま流用する。
 | `fs.watch`(親ディレクトリ監視)+ sha256 フィルタ | `notify` クレート + `sha2`。ロジックはそのまま移植 |
 | JSZip(ZIP エクスポート) | `zip` クレート |
 | `nativeTheme` → `theme-changed` | `WindowEvent::ThemeChanged` → emit |
-| `shell.openExternal` + protocol allowlist | `tauri-plugin-opener`。**http/https/mailto の allowlist 判定は Rust コマンド内に温存** |
+| `shell.openExternal` + protocol allowlist | `open` クレート。**http/https/mailto の allowlist 判定は Rust コマンド内に温存** |
 | `app.requestSingleInstanceLock` + `second-instance` | `tauri-plugin-single-instance`(argv 受け渡し込み) |
 | macOS `open-file` イベント | `RunEvent::Opened { urls }` |
 | `app.addRecentDocument` + 独自 recent-files.json | 独自 JSON は同形式で移植(`app_data_dir`)。OS ネイティブの最近使った書類は当面見送り |
@@ -78,7 +78,7 @@ src-tauri/
     main.rs / lib.rs     # setup, RunEvent::Opened, single-instance, renderer_ready キュー
     validate.rs          # パス検証(上記セキュリティ資産)
     files.rs             # open/save/autosave/recent/dropped コマンド群
-    watch.rs             # notify + sha256 + debounce + focus 再チェック
+    file_sync.rs         # notify + sha256 + debounce + focus 再チェック
     export.rs            # ZIP エクスポート
     menu.rs              # ネイティブメニュー(PredefinedMenuItem + カスタム → menu-action emit)
     settings.rs          # monacorc.json 読み込み
@@ -101,7 +101,20 @@ package.json             # pnpm は残す(フロント依存管理 + @tauri-apps
 
 ## フェーズ計画
 
-各フェーズは `pnpm tauri dev` での手動確認で完結させる(現行同様テストスイートなし)。
+各フェーズは `pnpm tauri dev` での手動確認を基本とし、Rust の純粋ロジックには単体テストを追加する。
+
+### 実装状況（2026-07-20）
+
+- **Phase 0: Go 判定** — WKWebView 上で Monaco、日本語 IME、IndexedDB/localStorage の再起動後復元、
+  ショートカット、macOS overlay タイトルバーとドラッグを実機確認済み。D&D の最終パリティ確認は継続。
+- **Phase 1: 完了** — `frontend/`、vendor 資産、Electron 互換の `tauri-bridge.js`、テーマ・設定を実装。
+- **Phase 2: ほぼ完了** — open/save/autosave/recent/D&D/argv/Finder/renderer-ready キューを実装。
+  single-instance の登録漏れ、Save As 拡張子補完、保存失敗時の認可残留を修正。パッケージ時の file association は未設定。
+- **Phase 3: 実装済み・実機検証中** — `file_sync.rs` に親ディレクトリ監視、SHA-256 自己書き込み抑制、
+  200ms debounce、読み込みリトライ、削除通知、フォーカス再確認、close 時の監視解除を実装。
+- **Phase 4: 一部完了** — preview と Monaco の Cmd+Click を Rust の http/https/mailto allowlist 経由で開く。
+  ネイティブメニューと ZIP エクスポートは未実装。
+- 品質ゲート: `pnpm check:tauri`（frontend lint、fmt、check、Clippy）と `cargo test` を追加。
 
 ### Phase 0 — スパイク & Go/No-Go 判定(タイムボックス: 1セッション)
 
@@ -109,13 +122,13 @@ package.json             # pnpm は残す(フロント依存管理 + @tauri-apps
 
 確認項目(**ひとつでも致命的なら中止して main に戻る**):
 
-- [ ] Monaco が `tauri://` カスタムプロトコル配信で起動する(AMD loader / web worker。
-      worker が動かない場合は Monaco の同期フォールバックで実用上問題ないか確認)
-- [ ] **日本語 IME 入力**が WKWebView 上の Monaco で問題ないか(変換・確定・インライン表示)
-- [ ] IndexedDB / localStorage がアプリ再起動を跨いで永続するか
-- [ ] ファイル D&D でパスが取得できるか
-- [ ] Cmd+P / Cmd+N 等のショートカットが WebView に届くか
-- [ ] macOS overlay タイトルバー(`titleBarStyle: Overlay`)で現行の見た目に近づくか
+- [x] Monaco が `tauri://` カスタムプロトコル配信で起動する(AMD loader / web worker。
+      vendor 資産を実ファイルへコピーすることで WKWebView から読み込み)
+- [x] **日本語 IME 入力**が WKWebView 上の Monaco で問題ないか(変換・確定・インライン表示)
+- [x] IndexedDB / localStorage がアプリ再起動を跨いで永続するか
+- [ ] ファイル D&D でパスが取得できるか（実装済み、最終手動確認待ち）
+- [x] Cmd+P / Cmd+N 等のショートカットが WebView に届くか
+- [x] macOS overlay タイトルバー(`titleBarStyle: Overlay`)で現行の見た目に近づくか
 
 ### Phase 1 — フロントエンド移植
 
@@ -151,6 +164,18 @@ package.json             # pnpm は残す(フロント依存管理 + @tauri-apps
 - アイコン、file associations(`.md` / `.markdown`)、dmg + notarize、nsis、AppImage/deb
 - README(en/ja)更新、バージョン 2.0.0
 - パリティチェックリスト(現行機能の全項目を手動確認)→ 合格したら main へマージ判断
+
+## 現在の検証コマンド
+
+```bash
+pnpm lint          # Electron 側の既存 renderer/main/preload
+pnpm check:tauri   # Tauri frontend lint + cargo fmt/check/clippy
+cargo test --manifest-path src-tauri/Cargo.toml
+pnpm tauri:dev     # 実アプリでの手動パリティ確認
+```
+
+Rust 単体テストは Save As の拡張子補完、外部 URL allowlist、SHA-256 ハッシュを対象とする。
+外部ファイル監視は direct write、atomic rename、削除、own-write 抑制を実アプリでも確認する。
 
 ## リスクと対応
 

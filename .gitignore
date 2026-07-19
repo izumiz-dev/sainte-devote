@@ -102,6 +102,12 @@ typings/
 dist/
 out/
 
+# Tauri-specific
+frontend/vendor/
+src-tauri/target/
+src-tauri/gen/
+frontend-spike/
+
 # OS generated files
 .DS_Store
 .DS_Store?
