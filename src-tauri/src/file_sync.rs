@@ -457,11 +457,26 @@ mod tests {
         worker.files.get(path).and_then(|file| file.last_hash)
     }
 
+    // On Unix, resolve symlinks in the temp root (macOS's /tmp is a symlink to
+    // /private/tmp, which would trip the path_contains_symlink check). On
+    // Windows, std::fs::canonicalize returns a `\\?\` verbatim prefix that the
+    // UNC-path guard in validate_readable_path rejects, so use the temp dir
+    // as-is there.
+    fn test_temp_root() -> PathBuf {
+        #[cfg(windows)]
+        {
+            std::env::temp_dir()
+        }
+        #[cfg(not(windows))]
+        {
+            std::fs::canonicalize(std::env::temp_dir()).unwrap()
+        }
+    }
+
     fn test_directory() -> tempfile::TempDir {
-        let temp_root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
         Builder::new()
             .prefix("sainte-devote-sync.")
-            .tempdir_in(temp_root)
+            .tempdir_in(test_temp_root())
             .unwrap()
     }
 

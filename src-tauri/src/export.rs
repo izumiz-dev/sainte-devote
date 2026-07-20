@@ -159,10 +159,25 @@ mod tests {
         assert_eq!(safe_entry_name("", 5, &mut used), "tab_6.md");
     }
 
+    // On Unix, resolve symlinks in the temp root (macOS's /tmp is a symlink to
+    // /private/tmp, which would trip the path_contains_symlink check). On
+    // Windows, std::fs::canonicalize returns a `\\?\` verbatim prefix that the
+    // UNC-path guard in validate_export_path rejects, so use the temp dir
+    // as-is there.
+    fn test_temp_root() -> std::path::PathBuf {
+        #[cfg(windows)]
+        {
+            std::env::temp_dir()
+        }
+        #[cfg(not(windows))]
+        {
+            std::fs::canonicalize(std::env::temp_dir()).unwrap()
+        }
+    }
+
     #[test]
     fn zip_contains_sanitized_tab_contents() {
-        let temp_root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
-        let directory = tempfile::tempdir_in(temp_root).unwrap();
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
         let path = directory.path().join("tabs.zip");
         let tabs = vec![
             ExportTab {
