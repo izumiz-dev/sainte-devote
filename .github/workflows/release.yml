@@ -8,8 +8,28 @@ on:
 permissions: {}
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    name: Tauri (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            platform: macos-latest
+            bundles: dmg
+            artifact_path: src-tauri/target/release/bundle/dmg/*.dmg
+            artifact_path_2: ''
+          - name: Windows
+            platform: windows-latest
+            bundles: nsis
+            artifact_path: src-tauri/target/release/bundle/nsis/*.exe
+            artifact_path_2: ''
+          - name: Linux
+            platform: ubuntu-22.04
+            bundles: appimage,deb
+            artifact_path: src-tauri/target/release/bundle/appimage/*.AppImage
+            artifact_path_2: src-tauri/target/release/bundle/deb/*.deb
+    runs-on: ${{ matrix.platform }}
 
     permissions:
       contents: read
@@ -18,59 +38,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
-        with:
-          version: 10.28.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24.12.0
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify release version
-        shell: pwsh
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          $packageVersion = node -p "require('./package.json').version"
-          $tagVersion = $env:RELEASE_TAG -replace '^v', ''
-          if ($tagVersion -ne $packageVersion) {
-            throw "Tag version $tagVersion does not match package version $packageVersion"
-          }
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Audit production dependencies
-        run: pnpm audit --prod
-
-      - name: Verify Electron version
-        run: pnpm exec electron --version
-
-      - name: Build Windows
-        run: pnpm build:win
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
-          name: windows-dist
-          path: dist/*.exe
-          if-no-files-found: error
-
-  build-mac:
-    runs-on: macos-latest
-
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+          components: clippy, rustfmt
 
       - name: Install pnpm
         uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
@@ -89,73 +76,82 @@ jobs:
       - name: Verify release version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/verify-release-version.mjs
+
+      - name: Check
+        run: pnpm check:tauri
+
+      - name: Test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          packageVersion=$(node -p "require('./package.json').version")
-          tagVersion="${RELEASE_TAG#v}"
-          if [ "$tagVersion" != "$packageVersion" ]; then
-            echo "Tag version $tagVersion does not match package version $packageVersion" >&2
-            exit 1
-          fi
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Audit production dependencies
-        run: pnpm audit --prod
-
-      - name: Verify Electron version
-        run: pnpm exec electron --version
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          printf '%s' "$CERTIFICATE_BASE64" | sed 's#^data:.*;base64,##' | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          test -n "$SIGNING_IDENTITY"
+          echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
       - name: Import App Store Connect API key
+        if: runner.os == 'macOS'
         env:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
-          mkdir -p "$RUNNER_TEMP/private_keys"
-          KEY_PATH="$RUNNER_TEMP/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
-          echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          echo "APPLE_API_KEY=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
-      - name: Build and notarize macOS
+      - name: Build
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm build:mac
+        run: pnpm exec tauri build --bundles ${{ matrix.bundles }}
 
-      - name: Upload macOS artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: macos-dist
-          path: dist/*.dmg
+          name: tauri-${{ matrix.name }}
+          path: |
+            ${{ matrix.artifact_path }}
+            ${{ matrix.artifact_path_2 }}
           if-no-files-found: error
 
   publish:
-    needs: [build-windows, build-mac]
+    needs: build
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
     steps:
-      - name: Download Windows artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          name: windows-dist
+          pattern: tauri-*
           path: dist
-
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: macos-dist
-          path: dist
+          merge-multiple: true
 
       - name: Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           files: |
-            dist/*.exe
-            dist/*.dmg
+            dist/**/*.AppImage
+            dist/**/*.deb
+            dist/**/*.dmg
+            dist/**/*.exe
           fail_on_unmatched_files: true

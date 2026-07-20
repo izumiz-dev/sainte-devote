@@ -1,11 +1,18 @@
 require.config({
   paths: {
-    vs: 'node_modules/monaco-editor/min/vs',
-    marked: 'node_modules/marked/marked.min',
+    vs: 'vendor/monaco-editor/min/vs',
+    marked: 'vendor/marked/marked.min',
   },
 });
 
 require(['vs/editor/editor.main', 'marked'], function (_, marked) {
+  monaco.editor.registerLinkOpener({
+    open(resource) {
+      window.electron.send('open-external', resource.toString());
+      return true;
+    },
+  });
+
   const renderer = new marked.Renderer();
 
   // Escape HTML so that code (or any untrusted text) is rendered as literal
@@ -342,6 +349,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     tabData[tabId].filePath = filePath;
     tabData[tabId].readOnly = false;
     tabData[tabId].fileMissing = false;
+    tabData[tabId].hasLocalEditsWhileMissing = false;
     tabData[tabId].title = fileName;
     updateTabTitleUI(tabId, fileName);
     const tabEl = document.querySelector(`.tab[data-tab="${tabId}"]`);
@@ -415,16 +423,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const tab = tabData[tabId];
     if (!tab) return;
 
-    // Edits made while the file was missing bypass autosaveTimers (autosave
-    // is paused), so a bare timer check would silently discard them when the
-    // file reappears — treat any reappearance with different content as a
-    // conflict.
-    const wasMissing = tab.fileMissing;
+    // Edits made while the file was missing bypass autosaveTimers because
+    // autosave is paused. Track those edits separately so an untouched tab
+    // can reload a recreated file silently without discarding real edits.
+    const hasLocalEditsWhileMissing = Boolean(tab.hasLocalEditsWhileMissing);
     tab.fileMissing = false;
+    tab.hasLocalEditsWhileMissing = false;
 
     if (content === tab.content) return;
 
-    const hasPendingLocalEdit = Boolean(autosaveTimers[tabId]) || wasMissing;
+    const hasPendingLocalEdit =
+      Boolean(autosaveTimers[tabId]) || hasLocalEditsWhileMissing;
     if (!hasPendingLocalEdit && !conflictTabs.has(tabId)) {
       applyExternalContent(tabId, content);
       return;
@@ -542,6 +551,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
             // real user edit, so don't autosave or re-trigger a conflict.
             return;
           }
+          if (tabData[tabId]?.fileMissing) {
+            tabData[tabId].hasLocalEditsWhileMissing = true;
+          }
           if (
             tabData[tabId]?.filePath &&
             !tabData[tabId]?.readOnly &&
@@ -618,12 +630,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const markdownCssLink = document.getElementById('github-markdown-css');
     if (isDark) {
       markdownCssLink.href =
-        'node_modules/github-markdown-css/github-markdown-dark.css';
-      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css';
+        'vendor/github-markdown-css/github-markdown-dark.css';
+      document.getElementById('highlight-theme').href = 'vendor/@highlightjs/cdn-assets/styles/github-dark.min.css';
     } else {
       markdownCssLink.href =
-        'node_modules/github-markdown-css/github-markdown-light.css';
-      document.getElementById('highlight-theme').href = 'node_modules/@highlightjs/cdn-assets/styles/github.min.css';
+        'vendor/github-markdown-css/github-markdown-light.css';
+      document.getElementById('highlight-theme').href = 'vendor/@highlightjs/cdn-assets/styles/github.min.css';
     }
 
     const newTheme = isDark ? 'vs-dark' : 'vs-light';
@@ -652,6 +664,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       order: currentOrder,
       filePath: filePath || null,
       readOnly: Boolean(readOnly),
+      fileMissing: false,
+      hasLocalEditsWhileMissing: false,
     };
 
     title = title || `Untitled ${getDisplayTabNumber(tabId)}`;
@@ -1557,7 +1571,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       monacoSettings.theme = isDark ? 'vs-dark' : 'vs-light';
     }
     updateBodyTheme(isDark);
-    window.electron.send('set-title-bar-theme', isDark);
+    window.electron.send('set-title-bar-theme', {
+      isDark,
+      followsSystem: userSettings.theme === 'system',
+    });
   }
 
   function setTheme(theme) {
@@ -1766,6 +1783,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const tabId = findTabByFilePath(filePath);
     if (tabId === null) return;
     tabData[tabId].fileMissing = true;
+    tabData[tabId].hasLocalEditsWhileMissing = false;
     if (autosaveTimers[tabId]) {
       clearTimeout(autosaveTimers[tabId]);
       delete autosaveTimers[tabId];
@@ -2217,6 +2235,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     );
 
     window.electron.openDroppedFiles(files);
+  });
+
+  // Tauri (WKWebView/WebView2): the browser-level drop above can't read file
+  // paths (e.dataTransfer.files has no .path), so drag-drop is handled on the
+  // Rust side via on_drag_drop_event. The backend drives this overlay and
+  // emits file-opened directly; these listeners just keep the overlay in sync.
+  // In Electron the events below are never emitted, so the handlers are inert.
+  window.electron.receive('drop-overlay-show', () => {
+    if (dropOverlay) dropOverlay.classList.add('visible');
+  });
+  window.electron.receive('drop-overlay-hide', () => {
+    if (dropOverlay) dropOverlay.classList.remove('visible');
   });
 
   // All IPC listeners above are registered; the main process holds queued

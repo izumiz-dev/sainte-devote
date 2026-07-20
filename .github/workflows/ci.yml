@@ -14,12 +14,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    runs-on: windows-latest
+  tauri:
+    name: Tauri (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - macos-latest
+          - ubuntu-22.04
+          - windows-latest
+    runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: clippy, rustfmt
 
       - name: Install pnpm
         uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
@@ -35,14 +64,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
       - name: Audit production dependencies
+        if: runner.os == 'Linux'
         run: pnpm audit --prod
 
-      - name: Verify Electron version
-        run: pnpm exec electron --version
+      - name: Check Tauri
+        run: pnpm check:tauri
 
-      - name: Package Windows app
-        run: pnpm exec electron-builder --dir --win
+      - name: Test Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml
