@@ -88,6 +88,8 @@ integration. There is no Node runtime in the shipped app.
   the Tauri equivalent of the old preload IPC allowlist.
 - **`monacorc.json`** — Monaco editor config, layered with user font/size
   overrides in the renderer.
+- **`docs/rust-rewrite-plan.md`** — migration status and remaining release
+  checks.
 
 ## Security model (do not regress)
 

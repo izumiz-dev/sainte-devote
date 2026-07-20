@@ -69,6 +69,3 @@ Run `pnpm check:tauri`, `cargo test --manifest-path src-tauri/Cargo.toml`,
 `pnpm lint`, and `git diff --check`. Manual GUI checks are required for changes
 to drag and drop, native menus, file synchronization, startup/open-file paths,
 or platform packaging.
-
-Do not alter or commit unrelated local changes in `.serena/project.yml` or the
-untracked `AGENTS.md`.
