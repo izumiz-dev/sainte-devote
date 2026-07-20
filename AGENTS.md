@@ -1,71 +1,128 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex (codex.ai/code) when working with code in
+this repository. See also [CLAUDE.md](CLAUDE.md), which is the authoritative
+source for architecture, security boundaries, and completion checks.
 
 ## Serena
 
-This project is set up for **Serena** (`.serena/project.yml`, memories in `.serena/memories/`). When the Serena MCP tools are available, prefer them:
+This project is set up for **Serena** (`.serena/project.yml`, memories in
+`.serena/memories/`). When the Serena MCP tools are available, prefer them:
 
-- **Context:** `read_memory` / `list_memories` instead of manually re-reading files; `write_memory` when you establish a new convention. Current memories: `project_overview`, `suggested_commands`, `code_style_conventions`, `task_completion_workflow`.
-- **Code navigation:** `find_symbol`, `get_symbols_overview`, `search_for_pattern` instead of raw reads.
-- **Editing:** `replace_symbol_body`, `insert_after_symbol`, etc. instead of rewriting whole files.
+- **Context:** `read_memory` / `list_memories` instead of manually re-reading
+  files; `write_memory` when you establish a new convention. Current memories:
+  `project_overview`, `suggested_commands`, `code_style_conventions`,
+  `task_completion_workflow`, `os_file_security_hardening`,
+  `tab_navigation_regression_test`.
+- **Code navigation:** `find_symbol`, `get_symbols_overview`,
+  `search_for_pattern` instead of raw reads.
+- **Editing:** `replace_symbol_body`, `insert_after_symbol`, etc. instead of
+  rewriting whole files.
 
-Note: the Serena language server is configured for `typescript`, which is also used for this project's plain JavaScript.
+Note: the Serena language server is configured for `typescript`, which also
+serves this project's plain JavaScript frontend. Rust symbol analysis via
+Serena may be unavailable, so navigate `src-tauri/` with `search_for_pattern`
+or raw reads.
 
 ## Commands
 
 ```bash
-pnpm dev          # run with hot-reload (electronmon) — primary dev loop
-pnpm start        # run without hot-reload
-pnpm lint         # ESLint over src/ — run before considering a change done
+pnpm tauri:dev    # vendor assets, then run Tauri dev (primary dev loop)
+pnpm check:tauri  # eslint + cargo fmt --check + cargo check + clippy -D warnings
+pnpm lint         # ESLint over frontend/src and build scripts (== lint:tauri)
 pnpm lint:fix     # ESLint with --fix
-pnpm build:mac    # / build:win / build:linux — package via electron-builder into dist/
+pnpm tauri:build  # / build:mac / build:win / build:linux — package via Tauri
 ```
 
-There is **no test suite**. Verification is manual: run `pnpm dev` and exercise the UI (this is a GUI app). Node 24+ / pnpm 10+ are required (pinned in `mise.toml` and `package.json` `engines`).
+Rust tests run separately:
+`cargo test --manifest-path src-tauri/Cargo.toml`.
+
+Verification is mostly manual (this is a GUI app): run `pnpm tauri:dev` and
+exercise the UI. Rust modules carry unit tests (validation, external URLs).
+Node 24+, pnpm 10+, and the Rust toolchain are pinned in `mise.toml`.
 
 ## Architecture
 
-A single-window Electron app: a multi-tab Markdown editor built on Monaco Editor. Three source files under `src/`, plus `index.html` (the renderer's DOM) and `monacorc.json` (editor config). `renderer.js` (~1700 lines) holds essentially all app logic; `main.js` and `preload.js` are thin.
+Sainte Devote is a single-window **Tauri 2** Markdown editor. Monaco Editor and
+the Markdown renderer run in the OS WebView; Rust owns all filesystem and OS
+integration. There is no Node runtime in the shipped app.
 
-### Process boundaries
+### Rust backend (`src-tauri/src/`)
 
-- **`src/main.js` (main process)** — creates the `BrowserWindow` (hidden/overlay titlebar), builds the native menu, owns OS integration: file open (argv, macOS `open-file`, drag & drop, recent files) and save dialogs, external-file-change watching, ZIP export (JSZip), `nativeTheme` change events, and reading `monacorc.json` from disk. Holds all Node/`fs` access.
-- **`src/renderer.js` (renderer)** — wrapped in Monaco's AMD `require([...])`. Owns tabs, editors, Markdown preview, command palette, settings, persistence, and DOM. Has **no Node access** (`nodeIntegration: false`).
-- **`src/preload.js` (bridge)** — exposes `window.electron` via `contextBridge`. IPC channels are **allowlisted** in `SEND_CHANNELS` / `RECEIVE_CHANNELS` sets; adding a new IPC message requires adding its channel name here or it is silently blocked.
+- **`lib.rs`** — Tauri setup, managed state (`ActiveFilePathsState`,
+  `PendingFileOpensState`, `RendererReadyState`), the startup file-open queue,
+  Tauri commands, and window events.
+- **`files.rs`** — open, save, autosave, recent files, and active-path write
+  authorization. Unix reads/writes use `O_NOFOLLOW`.
+- **`file_sync.rs`** — parent-directory watches, per-path hashes, debounce,
+  deletion/reappearance handling, and focus rechecks.
+- **`validate.rs`** — path, extension, regular-file, symlink (lstat over every
+  ancestor), NUL-byte, and export validation.
+- **`external.rs`** — external URL protocol allowlist (`http`, `https`,
+  `mailto`).
+- **`export.rs`** — ZIP export.
+- **`menu.rs`** — native menu construction and renderer event dispatch.
+- **`settings.rs`** — Monaco settings payload assembly.
 
-### Security model (do not regress)
+### Frontend (`frontend/`)
 
-`contextIsolation: true`, `nodeIntegration: false`. Two deliberate chokepoints:
-1. **IPC allowlist** in `preload.js` (above).
-2. **External-link allowlist** — `openExternalSafely()` in `main.js` only opens `http:`/`https:`/`mailto:`. All in-app navigation is intercepted (`will-navigate`, `setWindowOpenHandler`) and routed through it; preview links go renderer → `open-external` IPC → `openExternalSafely`.
-Markdown is rendered through **DOMPurify** (`getMarkdownHtml`) before `innerHTML`. `escapeHtml` guards code blocks.
+- **`src/renderer.js`** — tabs, per-tab Monaco editors, Markdown preview,
+  command palette, settings, persistence (IndexedDB for scratch tabs,
+  localStorage for preferences), and conflict UI. No Node access.
+- **`src/tauri-bridge.js`** — re-implements the old Electron `window.electron`
+  preload API over Tauri commands and events, so the renderer stays independent
+  of the shell. `window.__TAURI__` is exposed via `withGlobalTauri`. Channels
+  are allowlisted in `RECEIVE_CHANNELS` / `INVOKE_COMMANDS` / `SEND_COMMANDS`;
+  adding an IPC message requires registering it here **and** adding the matching
+  Rust command.
+- **`index.html`** — the renderer DOM. Loads **DOMPurify (UMD) before** Monaco's
+  AMD `loader.js` on purpose; don't reorder those `<script>` tags.
+- **`src/monaco-bootstrap.js`**, `src/main.css`, `vendor/` (vendored via
+  `scripts/vendor.mjs`, run automatically by `tauri:dev` / `tauri:build`).
 
-### Persistence (three destinations)
+### Config
 
-- **IndexedDB** (`SainteDevoteDB`) — content and metadata of **scratch tabs** (tabs without a `filePath`). Two object stores: `tabs` (id, title, order) and `content` (keyed by `tabId`). Content is saved on every `onDidChangeModelContent`. See `openDatabase` / `save*IndexedDB` / `load*IndexedDB` functions.
-- **The file itself** — tabs bound to a file autosave to disk with a 300ms debounce (`scheduleFileAutosave` → `save-file-to-path`). Autosave pauses while the tab is read-only, its file is missing from disk (`fileMissing`), or a conflict banner is unresolved (`conflictTabs`). File-bound tabs are **not** persisted to IndexedDB and are not restored across app restarts.
-- **localStorage** (`sainteDevoteSettings`) — user theme + editor/preview font preferences only. See `loadSettings` / `saveSettings`.
+- **`src-tauri/tauri.conf.json`** — app identifier (`dev.izumiz.sainte-devote`),
+  CSP, `withGlobalTauri`, `frontendDist`, and bundle configuration.
+- **`src-tauri/capabilities/main.json`** — WebView permissions. Keep minimal:
+  the Tauri equivalent of the old preload IPC allowlist.
+- **`monacorc.json`** — Monaco editor config, layered with user font/size
+  overrides in the renderer.
 
-### External file sync
+## Security model (do not regress)
 
-The **main process** watches every open file (`watchFileForExternalChanges`) via `fs.watch` on the **parent directory** — atomic saves (temp file + rename) break per-file watches. A per-path sha256 (`rememberFileContent`) filters out the app's own autosave writes; every read re-runs `validateReadableFilePath` first. Real changes reach the renderer as `file-changed-externally` / `file-removed-externally`; `handleExternalFileContent` reloads the tab silently (view state and undo preserved via `pushEditOperations`) or, when local edits are in flight, shows a reload-or-keep banner. A `browser-window-focus` recheck covers missed watcher events (sleep, network drives).
+- Keep Tauri capabilities minimal; filesystem access stays in Rust commands.
+- Only paths selected through an explicit user gesture enter
+  `ActiveFilePathsState`. Watching or opening a recent file does **not** grant
+  write access; recent-files opens stay read-only.
+- Validate extension, regular-file status, UTF-8, NUL bytes, and symlinks (via
+  lstat on every ancestor) before reading or writing. Unix I/O uses
+  `O_NOFOLLOW`.
+- External links allow only `http`, `https`, and `mailto`, enforced in Rust
+  (`external.rs`).
+- Keep DOMPurify before Monaco's AMD loader in `frontend/index.html`. Keep the
+  CSP restrictive; do not reintroduce inline scripts.
 
-### Rendering / load-order subtleties
+## Runtime subtleties
 
-- `index.html` loads **DOMPurify (UMD) before** Monaco's AMD `loader.js` on purpose — otherwise DOMPurify registers as an anonymous AMD module and collides with `marked`. Don't reorder these `<script>` tags. `highlight.js` (`hljs`) and `DOMPurify` are consumed as globals in `renderer.js` (declared in `eslint.config.js` globals).
-- Each tab gets its own Monaco editor instance in `editors{}`; `markdownCache{}` memoizes rendered HTML per tab.
-- The renderer's IPC listeners only exist after Monaco's AMD modules finish loading — later than `did-finish-load`. Main therefore queues file opens until the renderer sends `renderer-ready` (`flushPendingFileOpens`); don't send renderer-bound messages from main during startup without going through that queue.
+- File watchers monitor **parent directories** so atomic-save renames stay
+  detectable. A per-path sha256 filters out the app's own autosave writes.
+- `ExternalFileSyncState` is registered at the start of `.setup()` before any
+  pending file-open flush can use it.
+- Renderer IPC listeners exist only after Monaco's AMD modules finish loading.
+  Startup opens (argv / macOS open-file / second-instance) are queued in
+  `PendingFileOpensState` and flushed when the renderer sends `renderer-ready`;
+  `monaco-settings` is emitted only once that fires, to avoid a startup race.
+- Run through `pnpm tauri:dev`; launching the debug binary directly skips the
+  Tauri CLI frontend server.
+- On macOS, unbundled dev and installed builds use separate WebKit and
+  Application Support roots (`sainte-devote` vs `dev.izumiz.sainte-devote`).
+  Export scratch tabs before switching surfaces.
 
-### Theme flow (three-way: system / light / dark)
+## Conventions
 
-The **renderer owns the effective theme** (`getEffectiveIsDark` resolves the user's system/light/dark choice). Main only reports OS changes (`theme-changed`) and applies the Windows titlebar overlay colors when the renderer tells it to via `set-title-bar-theme`. Changing theme logic means touching both sides.
-
-### Command palette (Ctrl/Cmd+P)
-
-`updatePaletteResults` builds results from three sources: static commands (`staticCommands` array — the canonical list of palette actions), tab-name jumps, and full-text content search across **all** tabs (loading non-open tabs' content from IndexedDB). To add a palette command, append to `staticCommands`.
-
-## Config & conventions
-
-- **`monacorc.json`** is the Monaco editor config, read by the main process at load and sent to the renderer over the `monaco-settings` IPC channel (with `theme` injected). User font/size overrides from settings are layered on top in the renderer.
-- ESLint flat config (`eslint.config.js`) + Prettier (`.prettierrc`): single quotes, semicolons, 2-space indent, `prefer-const`/`no-var`. Main process is CommonJS `require`; renderer uses Monaco's AMD `require`.
+- ESLint flat config (`eslint.config.js`) + Prettier (`.prettierrc`): single
+  quotes, semicolons, 2-space indent, `prefer-const` / `no-var`. The renderer
+  uses Monaco's AMD `require`; `hljs` and `DOMPurify` are consumed as globals.
+- Rust: `cargo fmt` formatting, and `cargo clippy` must pass with
+  `-D warnings` (enforced by `check:tauri`).
