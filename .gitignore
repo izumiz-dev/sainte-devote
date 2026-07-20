@@ -4,7 +4,6 @@
 *.cer
 *.csr
 *.key
-!build/entitlements*.plist
 
 # Local manual-verification scratch dirs
 scripts/.verify-*
@@ -98,7 +97,7 @@ typings/
 # DynamoDB Local files
 .dynamodb/
 
-# Electron-specific
+# Legacy/local package outputs
 dist/
 out/
 

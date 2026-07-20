@@ -2,7 +2,7 @@
 
 [日本語版 (Japanese)](README.ja.md)
 
-Sainte Devote is a multi-tab Markdown editor based on Monaco Editor, built with Electron for cross-platform use.
+Sainte Devote is a compact, cross-platform Markdown editor built with Rust, Tauri 2, and Monaco Editor.
 
 https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
 
@@ -42,18 +42,41 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
     ```
 3.  Run:
     ```bash
-    pnpm dev
+    pnpm tauri:dev
     ```
 
 ## Building
 
--   **macOS**: `pnpm build:mac`
--   **Windows**: `pnpm build:win`
--   **Linux**: `pnpm build:linux`
+Run `pnpm tauri:build` on the target operating system. The Tauri configuration produces:
+
+-   **macOS**: `.app` and `.dmg`
+-   **Windows**: NSIS installer
+-   **Linux**: AppImage and Debian package
 
 The macOS build requires macOS 12 or later.
 
-Build files are generated in the `dist` folder.
+Build files are generated under `src-tauri/target/release/bundle`.
+
+Before submitting a change, run:
+
+```bash
+pnpm check:tauri
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+## Migrating from the Electron Build
+
+Scratch tabs stored by the Electron build are not automatically available to
+the Tauri build because the two runtimes use different WebView data stores.
+Before upgrading, use **Export All Tabs (.zip)** in the Electron build and keep
+the archive as a backup. Files already saved as `.md`, `.markdown`, or `.txt`
+are not affected by the application build process.
+
+The unbundled `pnpm tauri:dev` application and an installed macOS `.app` also
+use separate WebKit data directories. Export dev scratch tabs before switching
+to an installed build. Replacing an installed build with another build that
+keeps the same `dev.izumiz.sainte-devote` identifier preserves the installed
+build's data; changing the identifier creates a different data store.
 
 ## Configuration
 

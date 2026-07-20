@@ -99,14 +99,7 @@
        window instead of registering an anonymous AMD module (which collides
        with marked's anonymous define under the AMD loader). -->
   <script src="vendor/dompurify/dist/purify.min.js"></script>
-  <script>
-    var require = {
-      paths: {
-        vs: "vendor/monaco-editor/min/vs",
-        marked: "vendor/marked/marked.min",
-      },
-    };
-  </script>
+  <script src="src/monaco-bootstrap.js"></script>
   <script src="vendor/monaco-editor/min/vs/loader.js"></script>
   <script src="vendor/@highlightjs/cdn-assets/highlight.min.js"></script>
   <!-- Source maps are downloaded but non-critical; 404 warnings on .map files are harmless. -->

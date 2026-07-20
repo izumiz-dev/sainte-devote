@@ -8,7 +8,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::files;
 
@@ -120,16 +120,16 @@ impl ExternalFileSyncState {
     }
 }
 
-struct WatchWorker {
-    app: AppHandle,
+struct WatchWorker<R: Runtime> {
+    app: AppHandle<R>,
     watcher: RecommendedWatcher,
     files: HashMap<PathBuf, WatchedFile>,
     directories: HashMap<PathBuf, WatchedDirectory>,
     pending: HashMap<PathBuf, PendingCheck>,
 }
 
-impl WatchWorker {
-    fn new(app: AppHandle, watcher: RecommendedWatcher) -> Self {
+impl<R: Runtime> WatchWorker<R> {
+    fn new(app: AppHandle<R>, watcher: RecommendedWatcher) -> Self {
         Self {
             app,
             watcher,
@@ -440,6 +440,30 @@ fn hash_content(content: &str) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tauri::test::mock_app;
+    use tempfile::Builder;
+
+    fn test_worker() -> WatchWorker<tauri::test::MockRuntime> {
+        let app = mock_app();
+        let watcher = notify::recommended_watcher(|_| {}).unwrap();
+        WatchWorker::new(app.handle().clone(), watcher)
+    }
+
+    fn watched_hash(
+        worker: &WatchWorker<tauri::test::MockRuntime>,
+        path: &Path,
+    ) -> Option<[u8; 32]> {
+        worker.files.get(path).and_then(|file| file.last_hash)
+    }
+
+    fn test_directory() -> tempfile::TempDir {
+        let temp_root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        Builder::new()
+            .prefix("sainte-devote-sync.")
+            .tempdir_in(temp_root)
+            .unwrap()
+    }
 
     #[test]
     fn content_hash_is_stable_and_sensitive_to_changes() {
@@ -457,5 +481,98 @@ mod tests {
                 0xf2, 0x00, 0x15, 0xad,
             ]
         );
+    }
+
+    #[test]
+    fn direct_write_updates_the_watched_hash() {
+        let directory = test_directory();
+        let path = directory.path().join("direct.md");
+        fs::write(&path, "initial").unwrap();
+        let mut worker = test_worker();
+        worker.watch_file(path.clone(), hash_content("initial"));
+
+        fs::write(&path, "changed directly").unwrap();
+        worker.check_file(path.clone(), 0);
+
+        assert_eq!(
+            watched_hash(&worker, &path),
+            Some(hash_content("changed directly"))
+        );
+    }
+
+    #[test]
+    fn atomic_rename_updates_the_watched_hash() {
+        let directory = test_directory();
+        let path = directory.path().join("atomic.md");
+        let replacement = directory.path().join("replacement.md");
+        fs::write(&path, "initial").unwrap();
+        let mut worker = test_worker();
+        worker.watch_file(path.clone(), hash_content("initial"));
+
+        fs::write(&replacement, "atomic replacement").unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        worker.check_file(path.clone(), 0);
+
+        assert_eq!(
+            watched_hash(&worker, &path),
+            Some(hash_content("atomic replacement"))
+        );
+    }
+
+    #[test]
+    fn deletion_and_reappearance_update_the_watched_state() {
+        let directory = test_directory();
+        let path = directory.path().join("reappear.md");
+        fs::write(&path, "initial").unwrap();
+        let mut worker = test_worker();
+        worker.watch_file(path.clone(), hash_content("initial"));
+
+        fs::remove_file(&path).unwrap();
+        worker.check_file(path.clone(), 0);
+        assert_eq!(watched_hash(&worker, &path), None);
+
+        fs::write(&path, "reappeared").unwrap();
+        worker.check_file(path.clone(), 0);
+        assert_eq!(
+            watched_hash(&worker, &path),
+            Some(hash_content("reappeared"))
+        );
+    }
+
+    #[test]
+    fn remembered_own_write_is_not_treated_as_a_change() {
+        let directory = test_directory();
+        let path = directory.path().join("own-write.md");
+        fs::write(&path, "initial").unwrap();
+        let mut worker = test_worker();
+        worker.watch_file(path.clone(), hash_content("initial"));
+
+        fs::write(&path, "saved by app").unwrap();
+        worker.handle_message(WorkerMessage::RememberContent {
+            path: path.clone(),
+            hash: hash_content("saved by app"),
+        });
+        worker.check_file(path.clone(), 0);
+
+        assert_eq!(
+            watched_hash(&worker, &path),
+            Some(hash_content("saved by app"))
+        );
+    }
+
+    #[test]
+    fn unwatch_removes_pending_checks_and_directory_state() {
+        let directory = test_directory();
+        let path = directory.path().join("closed.md");
+        fs::write(&path, "initial").unwrap();
+        let mut worker = test_worker();
+        worker.watch_file(path.clone(), hash_content("initial"));
+        worker.schedule_paths(vec![path.clone()]);
+
+        worker.unwatch_file(&path);
+
+        assert!(!worker.files.contains_key(&path));
+        assert!(!worker.pending.contains_key(&path));
+        assert!(!worker.directories.contains_key(directory.path()));
     }
 }

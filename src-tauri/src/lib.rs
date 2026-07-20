@@ -1,6 +1,8 @@
+mod export;
 mod external;
 mod file_sync;
 mod files;
+mod menu;
 mod settings;
 mod validate;
 
@@ -117,6 +119,20 @@ fn flush_pending_opens<R: tauri::Runtime, T: tauri::Emitter<R> + tauri::Manager<
 fn update_window_title(window: tauri::WebviewWindow, title: String) {
     if let Err(e) = window.set_title(&title) {
         eprintln!("failed to set window title: {e}");
+    }
+}
+
+#[tauri::command]
+fn set_title_bar_theme(window: tauri::WebviewWindow, is_dark: bool, follows_system: bool) {
+    let theme = if follows_system {
+        None
+    } else if is_dark {
+        Some(tauri::Theme::Dark)
+    } else {
+        Some(tauri::Theme::Light)
+    };
+    if let Err(e) = window.set_theme(theme) {
+        eprintln!("failed to set window theme: {e}");
     }
 }
 
@@ -501,16 +517,20 @@ pub fn run() {
         .manage(RendererReadyState(std::sync::atomic::AtomicBool::new(
             false,
         )))
+        .menu(menu::build_menu)
+        .on_menu_event(menu::handle_menu_event)
         .invoke_handler(tauri::generate_handler![
             renderer_ready,
             update_window_title,
+            set_title_bar_theme,
             open_external,
             open_file_dialog,
             save_file,
             save_file_to_path,
             close_file,
             get_recent_files,
-            open_recent_file
+            open_recent_file,
+            export::export_tabs_data
         ])
         .setup(|app| {
             let sync = file_sync::ExternalFileSyncState::spawn(app.handle().clone())

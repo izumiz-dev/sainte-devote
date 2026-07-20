@@ -24,12 +24,33 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "font-src": "'self' data:",
+        "img-src": "'self' data: blob: http: https:",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "worker-src": "'self' blob:"
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "A compact multi-tab Markdown editor.",
+    "longDescription": "Sainte Devote is a compact multi-tab Markdown editor built around Monaco Editor.",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "description": "Markdown Document",
+        "mimeType": "text/markdown",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ],
     "icon": [
       "icons/icon.png",
       "icons/icon.icns",

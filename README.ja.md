@@ -2,7 +2,7 @@
 
 [English Version](README.md)
 
-Sainte Devote は、Monaco Editor をベースにしたマルチタブ型 Markdown エディタです。Electron を使用して構築されています。
+Sainte Devote は、Rust、Tauri 2、Monaco Editor で構築された軽量なクロスプラットフォーム Markdown エディタです。
 
 https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
 
@@ -44,18 +44,39 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
     ```
 3.  実行:
     ```bash
-    pnpm dev
+    pnpm tauri:dev
     ```
 
 ### ビルド
 
--   **macOS**: `pnpm build:mac`
--   **Windows**: `pnpm build:win`
--   **Linux**: `pnpm build:linux`
+対象OS上で `pnpm tauri:build` を実行します。Tauriの設定により、次の形式を生成します。
+
+-   **macOS**: `.app` / `.dmg`
+-   **Windows**: NSISインストーラー
+-   **Linux**: AppImage / Debianパッケージ
 
 macOS版の動作要件はmacOS 12以降です。
 
-ビルド済みファイルは `dist` フォルダに出力されます。
+ビルド済みファイルは `src-tauri/target/release/bundle` 以下に出力されます。
+
+変更を完了する前に次の検証を実行します。
+
+```bash
+pnpm check:tauri
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+## Electron版からの移行
+
+Electron版とTauri版ではWebViewのデータ保存領域が異なるため、Electron版のスクラッチタブは
+自動移行されません。アップグレード前にElectron版の **Export All Tabs (.zip)** を実行し、
+ZIPをバックアップとして保管してください。すでに`.md`、`.markdown`、`.txt`として保存した
+実ファイルは、アプリのビルド処理によって変更・削除されません。
+
+未バンドルの`pnpm tauri:dev`と、macOSへインストールした`.app`も別のWebKit保存領域を使います。
+dev版のスクラッチタブは、インストール版へ切り替える前にZIP Exportしてください。同じ
+`dev.izumiz.sainte-devote` identifierを維持したインストール版同士の置き換えではデータが
+保持されますが、identifierを変更すると別の保存領域になります。
 
 ## 設定
 

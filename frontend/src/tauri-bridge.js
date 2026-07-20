@@ -1,12 +1,6 @@
-// Shim that re-implements window.electron (see src/preload.js in the Electron
-// build) on top of Tauri's IPC, so renderer.js can run unmodified against
-// either shell. window.__TAURI__ is available because tauri.conf.json sets
-// app.withGlobalTauri: true.
-//
-// Phase 1 only wires the non-file-I/O surface (settings/theme/menu). The
-// file-I/O channels (save/open/recent/export/drag-drop) are stubbed out here
-// and will be filled in during Phase 2/4 — callers get a harmless no-op
-// instead of a thrown error so the rest of the app keeps working.
+// Re-implements the Electron preload API over Tauri commands and events so the
+// renderer stays independent of the desktop shell. window.__TAURI__ is exposed
+// by app.withGlobalTauri in tauri.conf.json.
 (function () {
   const { core, event } = window.__TAURI__;
 
@@ -49,8 +43,8 @@
     'save-file-to-path': 'save_file_to_path',
     'close-file': 'close_file',
     'open-external': 'open_external',
-    // Not yet implemented (Phase 3+): 'set-title-bar-theme',
-    // 'export-tabs-data'.
+    'export-tabs-data': 'export_tabs_data',
+    'set-title-bar-theme': 'set_title_bar_theme',
   };
 
   // Same bare-arg wrapping as above, but for send() channels.
@@ -58,10 +52,6 @@
     'close-file': { key: 'filePath' },
     'open-external': { key: 'url' },
   };
-
-  const NOT_YET_IMPLEMENTED_INVOKES = new Set([
-    // All Phase 2 file I/O is now implemented
-  ]);
 
   // Convert the args renderer.js passes into the shape Tauri's core.invoke()
   // expects. Tauri requires args as a single object whose keys match the Rust
@@ -126,26 +116,19 @@
         const tauriArgs = wrapArgs(BARE_ARG_WRAPPERS[channel], args);
         return core.invoke(command, tauriArgs);
       }
-      if (NOT_YET_IMPLEMENTED_INVOKES.has(channel)) {
-        console.warn(`tauri-bridge: invoke('${channel}') not yet implemented in the Tauri build`);
-        return Promise.resolve(channel === 'get-recent-files' ? [] : null);
-      }
       console.warn(`tauri-bridge: blocked invoke on disallowed channel: ${channel}`);
       return Promise.reject(new Error(`Disallowed channel: ${channel}`));
     },
 
-    openDroppedFiles: () => {
-      console.warn('tauri-bridge: openDroppedFiles not yet implemented in the Tauri build');
-      return Promise.resolve([]);
-    },
+    // Native Tauri drag events provide filesystem paths and emit file-opened.
+    // The browser drop callback still calls this compatibility method.
+    openDroppedFiles: () => Promise.resolve([]),
 
-    onExportRequest: () => {
-      // No 'request-export-all' emits yet (Phase 4); return a no-op unsubscribe.
-      return () => {};
-    },
+    onExportRequest: (callback) =>
+      window.electron.receive('request-export-all', callback),
 
-    sendExportData: () => {
-      console.warn('tauri-bridge: sendExportData not yet implemented in the Tauri build');
+    sendExportData: (tabsData) => {
+      window.electron.send('export-tabs-data', { tabsData });
     },
   };
 })();

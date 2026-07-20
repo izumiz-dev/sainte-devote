@@ -1,118 +1,43 @@
 {
   "name": "sainte-devote",
   "version": "1.7.0",
-  "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "cross-env NODE_ENV=development electronmon .",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "lint:tauri": "eslint frontend/src scripts/vendor.mjs --max-warnings 0",
+    "start": "pnpm tauri:dev",
+    "dev": "pnpm tauri:dev",
+    "build": "pnpm tauri:build",
+    "build:mac": "pnpm tauri:build --bundles app,dmg",
+    "build:win": "pnpm tauri:build --bundles nsis",
+    "build:linux": "pnpm tauri:build --bundles appimage,deb",
+    "lint": "pnpm lint:tauri",
+    "lint:fix": "eslint frontend/src scripts/vendor.mjs scripts/verify-release-version.mjs --fix",
+    "lint:tauri": "eslint frontend/src scripts/vendor.mjs scripts/verify-release-version.mjs --max-warnings 0",
     "check:tauri": "pnpm lint:tauri && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "vendor": "node scripts/vendor.mjs",
     "tauri": "tauri",
     "tauri:dev": "node scripts/vendor.mjs && tauri dev",
     "tauri:build": "node scripts/vendor.mjs && tauri build"
   },
-  "build": {
-    "publish": null,
-    "appId": "dev.izumiz.sainte-devote",
-    "productName": "Sainte Devote",
-    "icon": "assets/icon.png",
-    "fileAssociations": [
-      {
-        "ext": [
-          "md",
-          "markdown"
-        ],
-        "name": "Markdown File",
-        "description": "Markdown Document",
-        "mimeType": "text/markdown",
-        "role": "Editor",
-        "icon": "assets/icon"
-      }
-    ],
-    "mac": {
-      "target": [
-        "zip",
-        "dmg"
-      ],
-      "category": "public.app-category.utilities",
-      "icon": "assets/icon.icns",
-      "minimumSystemVersion": "12.0",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": true
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Utility",
-      "icon": "assets/icon.png",
-      "mimeTypes": [
-        "text/markdown",
-        "text/x-markdown"
-      ]
-    }
-  },
   "keywords": [],
   "author": "",
   "license": "MIT",
-  "description": "Sainte devote is tiny monaco editor.",
+  "description": "A compact Markdown editor built with Rust, Tauri 2, and Monaco Editor.",
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
     "dompurify": "^3.4.11",
     "github-markdown-css": "^5.7.0",
-    "highlight.js": "^11.11.1",
-    "jszip": "^3.10.1",
     "marked": "^5.1.0",
-    "monaco-editor": "^0.50.0",
-    "pako": "^2.1.0",
-    "setimmediate": "^1.0.5"
+    "monaco-editor": "^0.50.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
-    "concurrently": "^8.2.1",
-    "cross-env": "^7.0.3",
-    "dmg-builder": "^26.15.0",
-    "electron": "^42.3.3",
-    "electron-builder": "^26.15.0",
-    "electron-reload": "^2.0.0-alpha.1",
-    "electronmon": "^2.0.3",
     "eslint": "^9.15.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
-    "prettier": "^3.3.3",
-    "wait-on": "^8.0.1"
+    "prettier": "^3.3.3"
   },
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=24",
     "pnpm": ">=10"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron"
-    ]
   }
 }

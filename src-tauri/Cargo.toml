@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
@@ -21,9 +21,16 @@ open = "5"
 url = "2"
 notify = "8.2"
 sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "macros"] }
+zip = { version = "8.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[profile.release]
+# Cargo 1.97.0's deferred debuginfo stripping breaks proc-macro loading on macOS.
+strip = false
