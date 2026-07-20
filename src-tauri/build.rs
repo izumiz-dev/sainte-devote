@@ -1,4 +1,8 @@
 fn main() {
+    // `mut` is only exercised inside the `cfg(windows)` block below; on other
+    // platforms that block is compiled out, so silence the unused-mut lint
+    // there instead of dropping `mut` (which Windows still needs).
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut attributes = tauri_build::Attributes::new();
 
     // On Windows, `tauri-winres` links the application manifest with
