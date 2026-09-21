@@ -47,6 +47,7 @@ pub fn with_zip_extension(path: &Path) -> PathBuf {
 /// On Windows that is a UNC share, `\\?\` verbatim prefix, or `\\.\` device
 /// namespace. Slash-form UNC (`//server/share`) is included so it cannot
 /// bypass a backslash-only prefix check.
+#[cfg(any(windows, test))]
 pub fn path_has_windows_unc_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     bytes.len() >= 2 && matches!(bytes[0], b'\\' | b'/') && matches!(bytes[1], b'\\' | b'/')

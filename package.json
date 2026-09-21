@@ -23,7 +23,7 @@
   "description": "A compact Markdown editor built with Rust, Tauri 2, and Monaco Editor.",
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
-    "dompurify": "^3.4.11",
+    "dompurify": "^3.4.15",
     "github-markdown-css": "^5.7.0",
     "marked": "^5.1.0",
     "monaco-editor": "^0.50.0"
