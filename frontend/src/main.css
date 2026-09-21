@@ -43,6 +43,60 @@ body.native-titlebar #titlebar {
   display: none;
 }
 
+#window-controls {
+  display: none;
+}
+
+body.windows-custom-chrome #titlebar {
+  padding-right: 138px;
+}
+
+body.windows-custom-chrome #window-controls {
+  display: flex;
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+#window-controls button {
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.dark-theme #window-controls button {
+  color: #9ca3af;
+}
+
+#window-controls button:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #111827;
+}
+
+.dark-theme #window-controls button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3f4f6;
+}
+
+#win-close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+.dark-theme #win-close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
 #drop-overlay {
   display: none;
   position: fixed;

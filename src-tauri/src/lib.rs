@@ -547,6 +547,17 @@ pub fn run() {
                 let mut q = pending.0.lock().unwrap();
                 q.extend(paths);
             }
+
+            // Overlay title bars are macOS-only. On Windows the OS caption would
+            // sit above the custom #titlebar; drop decorations and let the
+            // renderer draw window controls instead.
+            #[cfg(windows)]
+            for window in app.webview_windows().values() {
+                if let Err(e) = window.set_decorations(false) {
+                    eprintln!("failed to disable window decorations: {e}");
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {

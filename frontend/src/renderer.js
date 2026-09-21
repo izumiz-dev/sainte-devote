@@ -2087,6 +2087,42 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
+  function currentTauriWindow() {
+    const api = window.__TAURI__;
+    if (api?.webviewWindow?.getCurrentWebviewWindow) {
+      return api.webviewWindow.getCurrentWebviewWindow();
+    }
+    if (api?.window?.getCurrentWindow) {
+      return api.window.getCurrentWindow();
+    }
+    return null;
+  }
+
+  if (/Windows/i.test(navigator.userAgent)) {
+    document.body.classList.add('windows-custom-chrome');
+    const appWindow = currentTauriWindow();
+    const minBtn = document.getElementById('win-min');
+    const maxBtn = document.getElementById('win-max');
+    const closeBtn = document.getElementById('win-close');
+    if (appWindow && minBtn && maxBtn && closeBtn) {
+      minBtn.addEventListener('click', () => {
+        appWindow.minimize();
+      });
+      maxBtn.addEventListener('click', () => {
+        appWindow.toggleMaximize();
+      });
+      closeBtn.addEventListener('click', () => {
+        appWindow.close();
+      });
+      document.getElementById('titlebar')?.addEventListener('dblclick', (event) => {
+        if (event.target.closest('#center-controls, #window-controls')) {
+          return;
+        }
+        appWindow.toggleMaximize();
+      });
+    }
+  }
+
   window.addEventListener('resize', () => {
     if (currentTab && editors[currentTab]) {
       editors[currentTab].layout();
