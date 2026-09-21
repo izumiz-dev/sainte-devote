@@ -43,6 +43,15 @@ pub fn with_zip_extension(path: &Path) -> PathBuf {
     PathBuf::from(path_with_extension)
 }
 
+/// True when `path` starts with two separators (`\\`, `//`, or mixed).
+/// On Windows that is a UNC share, `\\?\` verbatim prefix, or `\\.\` device
+/// namespace. Slash-form UNC (`//server/share`) is included so it cannot
+/// bypass a backslash-only prefix check.
+pub fn path_has_windows_unc_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && matches!(bytes[0], b'\\' | b'/') && matches!(bytes[1], b'\\' | b'/')
+}
+
 /// Returns true if any component of the path (or the final component itself)
 /// is a symbolic link. Mirrors main.js's pathContainsSymlink + the final
 /// isSymbolicLink() check in validateReadableFilePath — without it, a symlink
@@ -78,17 +87,12 @@ pub fn validate_readable_path(path: &Path) -> Result<(), String> {
         if s.contains('\0') {
             return Err("Path contains NUL character".to_string());
         }
-    } else {
-        return Err("Invalid UTF-8 in path".to_string());
-    }
-
-    #[cfg(windows)]
-    {
-        // Windows: reject UNC paths (mirrors main.js isBlockedUncPath)
-        let path_str = path.to_str().unwrap_or("");
-        if path_str.starts_with("\\\\") {
+        #[cfg(windows)]
+        if path_has_windows_unc_prefix(s) {
             return Err("UNC paths not supported".to_string());
         }
+    } else {
+        return Err("Invalid UTF-8 in path".to_string());
     }
 
     if path_contains_symlink(path) {
@@ -102,14 +106,6 @@ pub fn validate_readable_path(path: &Path) -> Result<(), String> {
 /// - Rejects UNC paths on Windows for now
 pub fn validate_writable_path(path: &Path) -> Result<(), String> {
     validate_readable_path(path)?;
-
-    #[cfg(windows)]
-    {
-        let path_str = path.to_str().unwrap_or("");
-        if path_str.starts_with("\\\\") {
-            return Err("UNC paths not supported for writing".to_string());
-        }
-    }
 
     let parent = path
         .parent()
@@ -147,7 +143,7 @@ pub fn validate_export_path(path: &Path) -> Result<(), String> {
     }
 
     #[cfg(windows)]
-    if path_string.starts_with("\\\\") {
+    if path_has_windows_unc_prefix(path_string) {
         return Err("UNC paths not supported for export".to_string());
     }
 
@@ -206,6 +202,138 @@ mod tests {
         assert_eq!(
             with_zip_extension(Path::new("backup.ZIP")),
             PathBuf::from("backup.ZIP")
+        );
+    }
+
+    #[test]
+    fn windows_unc_prefix_matches_slash_and_backslash_forms() {
+        assert!(path_has_windows_unc_prefix(r"\\server\share\file.md"));
+        assert!(path_has_windows_unc_prefix("//server/share/file.md"));
+        assert!(path_has_windows_unc_prefix(r"\/server\share\file.md"));
+        assert!(path_has_windows_unc_prefix(r"/\server/share/file.md"));
+        assert!(path_has_windows_unc_prefix(r"\\?\UNC\server\share\file.md"));
+        assert!(path_has_windows_unc_prefix("//?/UNC/server/share/file.md"));
+        assert!(path_has_windows_unc_prefix(r"\\.\pipe\file.md"));
+        assert!(path_has_windows_unc_prefix("//./pipe/file.md"));
+        assert!(path_has_windows_unc_prefix(r"\\?\C:\Users\file.md"));
+    }
+
+    #[test]
+    fn windows_unc_prefix_ignores_drive_and_posix_paths() {
+        assert!(!path_has_windows_unc_prefix(r"C:\Users\file.md"));
+        assert!(!path_has_windows_unc_prefix("C:/Users/file.md"));
+        assert!(!path_has_windows_unc_prefix(r"\server\share\file.md"));
+        assert!(!path_has_windows_unc_prefix("/users/file.md"));
+        assert!(!path_has_windows_unc_prefix(""));
+        assert!(!path_has_windows_unc_prefix("\\"));
+        assert!(!path_has_windows_unc_prefix("/"));
+        assert!(!path_has_windows_unc_prefix("file.md"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn readable_and_export_paths_reject_slash_unc() {
+        let readable = validate_readable_path(Path::new("//server/share/file.md"));
+        assert!(readable.unwrap_err().contains("UNC"));
+
+        let mixed = validate_readable_path(Path::new(r"\\server/share/file.md"));
+        assert!(mixed.unwrap_err().contains("UNC"));
+
+        let export = validate_export_path(Path::new("//server/share/backup.zip"));
+        assert!(export.unwrap_err().contains("UNC"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn readable_path_rejects_backslash_unc_and_device_namespace() {
+        assert!(validate_readable_path(Path::new(r"\\server\share\file.md"))
+            .unwrap_err()
+            .contains("UNC"));
+        assert!(validate_readable_path(Path::new(r"\\.\pipe\file.md"))
+            .unwrap_err()
+            .contains("UNC"));
+        assert!(
+            validate_readable_path(Path::new(r"\\?\UNC\server\share\file.md"))
+                .unwrap_err()
+                .contains("UNC")
+        );
+    }
+
+    fn try_symlink_dir(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(target, link).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (target, link);
+            false
+        }
+    }
+
+    fn try_symlink_file(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (target, link);
+            false
+        }
+    }
+
+    fn test_temp_root() -> PathBuf {
+        #[cfg(windows)]
+        {
+            std::env::temp_dir()
+        }
+        #[cfg(not(windows))]
+        {
+            std::fs::canonicalize(std::env::temp_dir()).unwrap()
+        }
+    }
+
+    #[test]
+    fn readable_path_rejects_leaf_symlink() {
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
+        let target = directory.path().join("target.md");
+        let link = directory.path().join("link.md");
+        std::fs::write(&target, "secret").unwrap();
+        if !try_symlink_file(&target, &link) {
+            return;
+        }
+        let error = validate_readable_path(&link).unwrap_err();
+        assert!(
+            error.to_lowercase().contains("symbolic link"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn readable_path_rejects_symlink_in_ancestor() {
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
+        let real_dir = directory.path().join("real");
+        let link_dir = directory.path().join("link");
+        std::fs::create_dir(&real_dir).unwrap();
+        let file = real_dir.join("note.md");
+        std::fs::write(&file, "ok").unwrap();
+        if !try_symlink_dir(&real_dir, &link_dir) {
+            return;
+        }
+        let through_link = link_dir.join("note.md");
+        let error = validate_readable_path(&through_link).unwrap_err();
+        assert!(
+            error.to_lowercase().contains("symbolic link"),
+            "unexpected error: {error}"
         );
     }
 }

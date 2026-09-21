@@ -1,6 +1,6 @@
 {
   "name": "sainte-devote",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "scripts": {
     "start": "pnpm tauri:dev",
     "dev": "pnpm tauri:dev",

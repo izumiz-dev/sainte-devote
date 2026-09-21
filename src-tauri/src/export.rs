@@ -69,17 +69,7 @@ fn default_export_filename() -> String {
 
 fn open_export_file(path: &Path) -> Result<std::fs::File, String> {
     validate::validate_export_path(path)?;
-
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW);
-    }
-    options
-        .open(path)
-        .map_err(|error| format!("Failed to open export file: {error}"))
+    crate::fs_open::open_write_nofollow(path)
 }
 
 fn write_zip(path: &Path, tabs: &[ExportTab]) -> Result<(), String> {
@@ -197,5 +187,12 @@ mod tests {
         assert_eq!(archive.len(), 2);
         assert_eq!(archive.by_index(0).unwrap().name(), "one.md");
         assert_eq!(archive.by_index(1).unwrap().name(), "one_1.md");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_write_rejects_slash_unc_without_touching_the_network() {
+        let error = write_zip(Path::new("//server/share/tabs.zip"), &[]).unwrap_err();
+        assert!(error.contains("UNC"), "unexpected error: {error}");
     }
 }

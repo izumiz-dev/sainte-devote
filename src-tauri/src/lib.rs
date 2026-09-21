@@ -2,6 +2,7 @@ mod export;
 mod external;
 mod file_sync;
 mod files;
+mod fs_open;
 mod menu;
 mod settings;
 mod validate;

@@ -1,6 +1,6 @@
 [package]
 name = "sainte-devote"
-version = "2.0.1"
+version = "2.0.2"
 description = "Sainte Devote (Tauri rewrite, in progress)"
 edition = "2021"
 

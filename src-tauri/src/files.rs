@@ -115,21 +115,7 @@ pub fn read_file_content(path: &Path) -> Result<String, String> {
 
     validate::validate_readable_path(path)?;
 
-    #[cfg(unix)]
-    let mut file = {
-        use std::os::unix::fs::OpenOptionsExt;
-        std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
-            .map_err(|e| format!("Failed to open file (O_NOFOLLOW): {e}"))?
-    };
-
-    #[cfg(not(unix))]
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .open(path)
-        .map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut file = crate::fs_open::open_read_nofollow(path)?;
 
     let metadata = file
         .metadata()
@@ -146,7 +132,8 @@ pub fn read_file_content(path: &Path) -> Result<String, String> {
 
 /// Write content to file with validation and activeFilePaths check.
 /// Mirrors main.js's writeFileNoFollow: O_NOFOLLOW on Unix (rejects if the
-/// final path component is a symlink), reparse-point check on Windows.
+/// final path component is a symlink), reparse-point check on Windows
+/// (`FILE_FLAG_OPEN_REPARSE_POINT` plus a name-surrogate tag check).
 /// Direct write (no temp+rename) — matches the Electron build, and Phase 3's
 /// sha256 self-write filter is what suppresses the resulting watcher echo.
 pub fn write_file_content(
@@ -163,25 +150,93 @@ pub fn write_file_content(
     }
     drop(paths);
 
-    // O_NOFOLLOW on Unix: refuse to write through a symlink at the final path.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        const O_NOFOLLOW: i32 = libc::O_NOFOLLOW;
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .custom_flags(O_NOFOLLOW)
-            .open(path)
-            .and_then(|mut f| std::io::Write::write_all(&mut f, content.as_bytes()))
-            .map_err(|e| format!("Failed to write file (O_NOFOLLOW): {e}"))?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, content).map_err(|e| format!("Failed to write file: {e}"))?;
-    }
+    let mut file = crate::fs_open::open_write_nofollow(path)?;
+    std::io::Write::write_all(&mut file, content.as_bytes())
+        .map_err(|e| format!("Failed to write file: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::fs;
+
+    fn test_temp_root() -> PathBuf {
+        #[cfg(windows)]
+        {
+            std::env::temp_dir()
+        }
+        #[cfg(not(windows))]
+        {
+            std::fs::canonicalize(std::env::temp_dir()).unwrap()
+        }
+    }
+
+    #[test]
+    fn write_then_read_round_trip_through_active_paths() {
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
+        let path = directory.path().join("note.md");
+        let active: ActiveFilePaths = Mutex::new(HashSet::from([path.clone()]));
+
+        write_file_content(&path, "hello from test", &active).unwrap();
+        assert_eq!(read_file_content(&path).unwrap(), "hello from test");
+    }
+
+    #[test]
+    fn write_refuses_path_outside_active_file_paths() {
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
+        let path = directory.path().join("note.md");
+        let active: ActiveFilePaths = Mutex::new(HashSet::new());
+
+        let error = write_file_content(&path, "nope", &active).unwrap_err();
+        assert!(
+            error.contains("activeFilePaths"),
+            "unexpected error: {error}"
+        );
+        assert!(!path.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_rejects_slash_unc_before_network_io() {
+        let error = read_file_content(Path::new("//server/share/file.md")).unwrap_err();
+        assert!(error.contains("UNC"), "unexpected error: {error}");
+    }
+
+    fn try_symlink_file(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (target, link);
+            false
+        }
+    }
+
+    #[test]
+    fn read_rejects_leaf_symlink() {
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
+        let target = directory.path().join("target.md");
+        let link = directory.path().join("link.md");
+        fs::write(&target, "secret").unwrap();
+        if !try_symlink_file(&target, &link) {
+            return;
+        }
+        let error = read_file_content(&link).unwrap_err();
+        assert!(
+            error.to_lowercase().contains("symbolic link")
+                || error.contains("O_NOFOLLOW")
+                || error.contains("junction"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "secret");
+    }
 }
