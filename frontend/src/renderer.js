@@ -2098,7 +2098,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     return null;
   }
 
-  if (/Windows/i.test(navigator.userAgent)) {
+  if (/Windows/i.test(navigator.userAgent) || navigator.platform === 'Win32') {
     document.body.classList.add('windows-custom-chrome');
     const appWindow = currentTauriWindow();
     const minBtn = document.getElementById('win-min');

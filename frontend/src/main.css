@@ -53,11 +53,13 @@ body.windows-custom-chrome #titlebar {
 
 body.windows-custom-chrome #window-controls {
   display: flex;
-  position: absolute;
+  position: fixed;
   top: 0;
   right: 0;
-  height: 100%;
+  height: 40px;
+  z-index: 1000;
   -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 #window-controls button {
