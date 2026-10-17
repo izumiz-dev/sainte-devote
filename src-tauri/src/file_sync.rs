@@ -1,16 +1,17 @@
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 use crate::files;
+use crate::ipc;
 
 const CHANGE_CHECK_DEBOUNCE: Duration = Duration::from_millis(200);
 const CHANGE_CHECK_RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -30,11 +31,23 @@ struct ExternalFileRemovedPayload {
 }
 
 enum WorkerMessage {
-    WatchFile { path: PathBuf, hash: [u8; 32] },
-    RememberContent { path: PathBuf, hash: [u8; 32] },
-    UnwatchFile { path: PathBuf },
+    WatchFile {
+        path: PathBuf,
+        hash: [u8; 32],
+        window: String,
+    },
+    RememberContent {
+        path: PathBuf,
+        hash: [u8; 32],
+    },
+    UnwatchFile {
+        path: PathBuf,
+        window: String,
+    },
+    UnwatchWindow {
+        window: String,
+    },
     RecheckAll,
-    StopAll,
     NotifyEvent(notify::Result<notify::Event>),
     Shutdown,
 }
@@ -42,6 +55,20 @@ enum WorkerMessage {
 struct WatchedFile {
     parent: PathBuf,
     last_hash: Option<[u8; 32]>,
+    subscribers: HashSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FileNotice {
+    pub path: PathBuf,
+    pub kind: FileNoticeKind,
+    pub subscribers: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum FileNoticeKind {
+    Changed(String),
+    Removed,
 }
 
 struct WatchedDirectory {
@@ -81,10 +108,11 @@ impl ExternalFileSyncState {
         })
     }
 
-    pub fn watch_file(&self, path: &Path, content: &str) {
+    pub fn watch_file(&self, path: &Path, content: &str, window: &str) {
         let _ = self.tx.send(WorkerMessage::WatchFile {
             path: path.to_path_buf(),
             hash: hash_content(content),
+            window: window.to_string(),
         });
     }
 
@@ -95,18 +123,21 @@ impl ExternalFileSyncState {
         });
     }
 
-    pub fn unwatch_file(&self, path: &Path) {
+    pub fn unwatch_file(&self, path: &Path, window: &str) {
         let _ = self.tx.send(WorkerMessage::UnwatchFile {
             path: path.to_path_buf(),
+            window: window.to_string(),
+        });
+    }
+
+    pub fn unwatch_window(&self, window: &str) {
+        let _ = self.tx.send(WorkerMessage::UnwatchWindow {
+            window: window.to_string(),
         });
     }
 
     pub fn recheck_all(&self) {
         let _ = self.tx.send(WorkerMessage::RecheckAll);
-    }
-
-    pub fn stop_all(&self) {
-        let _ = self.tx.send(WorkerMessage::StopAll);
     }
 
     pub fn shutdown(&self) {
@@ -172,24 +203,25 @@ impl<R: Runtime> WatchWorker<R> {
 
     fn handle_message(&mut self, message: WorkerMessage) -> bool {
         match message {
-            WorkerMessage::WatchFile { path, hash } => self.watch_file(path, hash),
+            WorkerMessage::WatchFile { path, hash, window } => self.watch_file(path, hash, window),
             WorkerMessage::RememberContent { path, hash } => {
                 if let Some(file) = self.files.get_mut(&path) {
                     file.last_hash = Some(hash);
                 }
             }
-            WorkerMessage::UnwatchFile { path } => self.unwatch_file(&path),
+            WorkerMessage::UnwatchFile { path, window } => self.unwatch_file(&path, &window),
+            WorkerMessage::UnwatchWindow { window } => self.unwatch_window(&window),
             WorkerMessage::RecheckAll => self.recheck_all(),
-            WorkerMessage::StopAll => self.stop_all(),
             WorkerMessage::NotifyEvent(event) => self.handle_notify_event(event),
             WorkerMessage::Shutdown => return true,
         }
         false
     }
 
-    fn watch_file(&mut self, path: PathBuf, hash: [u8; 32]) {
+    fn watch_file(&mut self, path: PathBuf, hash: [u8; 32], window: String) {
         if let Some(file) = self.files.get_mut(&path) {
             file.last_hash = Some(hash);
+            file.subscribers.insert(window);
             return;
         }
 
@@ -216,11 +248,19 @@ impl<R: Runtime> WatchWorker<R> {
             WatchedFile {
                 parent,
                 last_hash: Some(hash),
+                subscribers: HashSet::from([window]),
             },
         );
     }
 
-    fn unwatch_file(&mut self, path: &Path) {
+    fn unwatch_file(&mut self, path: &Path, window: &str) {
+        let Some(file) = self.files.get_mut(path) else {
+            return;
+        };
+        file.subscribers.remove(window);
+        if !file.subscribers.is_empty() {
+            return;
+        }
         self.pending.remove(path);
         let Some(file) = self.files.remove(path) else {
             return;
@@ -241,6 +281,18 @@ impl<R: Runtime> WatchWorker<R> {
                 let _ = self.watcher.unwatch(&file.parent);
             }
             self.directories.remove(&file.parent);
+        }
+    }
+
+    fn unwatch_window(&mut self, window: &str) {
+        let paths: Vec<PathBuf> = self
+            .files
+            .iter()
+            .filter(|(_, file)| file.subscribers.contains(window))
+            .map(|(path, _)| path.clone())
+            .collect();
+        for path in paths {
+            self.unwatch_file(&path, window);
         }
     }
 
@@ -327,29 +379,30 @@ impl<R: Runtime> WatchWorker<R> {
             .collect();
         for (path, attempt) in due {
             self.pending.remove(&path);
-            self.check_file(path, attempt);
+            if let Some(notice) = self.check_file(path.clone(), attempt) {
+                self.dispatch_notice(&notice);
+            }
         }
     }
 
-    fn check_file(&mut self, path: PathBuf, attempt: u8) {
+    fn check_file(&mut self, path: PathBuf, attempt: u8) -> Option<FileNotice> {
         if !self.files.contains_key(&path) {
-            return;
+            return None;
         }
 
         match std::fs::symlink_metadata(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                self.emit_removed_if_needed(&path);
-                return;
+                return self.take_removed(&path);
             }
             Err(e) => {
                 self.retry_or_log(path, attempt, format!("Failed to inspect file: {e}"));
-                return;
+                return None;
             }
             Ok(metadata)
                 if !metadata.file_type().is_file() || metadata.file_type().is_symlink() =>
             {
                 eprintln!("external file replacement rejected: {}", path.display());
-                return;
+                return None;
             }
             Ok(_) => {}
         }
@@ -358,11 +411,10 @@ impl<R: Runtime> WatchWorker<R> {
             Ok(content) => content,
             Err(e) => {
                 if !path.exists() {
-                    self.emit_removed_if_needed(&path);
-                } else {
-                    self.retry_or_log(path, attempt, e);
+                    return self.take_removed(&path);
                 }
-                return;
+                self.retry_or_log(path, attempt, e);
+                return None;
             }
         };
         let new_hash = hash_content(&content);
@@ -371,12 +423,17 @@ impl<R: Runtime> WatchWorker<R> {
             .get(&path)
             .is_some_and(|file| file.last_hash != Some(new_hash));
         if !changed {
-            return;
+            return None;
         }
+        let subscribers = self.subscriber_list(&path);
         if let Some(file) = self.files.get_mut(&path) {
             file.last_hash = Some(new_hash);
         }
-        self.emit_changed(&path, content);
+        Some(FileNotice {
+            path,
+            kind: FileNoticeKind::Changed(content),
+            subscribers,
+        })
     }
 
     fn retry_or_log(&mut self, path: PathBuf, attempt: u8, error: String) {
@@ -393,42 +450,62 @@ impl<R: Runtime> WatchWorker<R> {
         }
     }
 
-    fn emit_removed_if_needed(&mut self, path: &Path) {
+    fn subscriber_list(&self, path: &Path) -> Vec<String> {
+        self.files
+            .get(path)
+            .map(|file| file.subscribers.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn take_removed(&mut self, path: &Path) -> Option<FileNotice> {
         let should_emit = self
             .files
             .get(path)
             .is_some_and(|file| file.last_hash.is_some());
         if !should_emit {
-            return;
+            return None;
         }
+        let subscribers = self.subscriber_list(path);
         if let Some(file) = self.files.get_mut(path) {
             file.last_hash = None;
         }
-        let Some(file_path) = path.to_str() else {
-            return;
-        };
-        if let Some(window) = self.app.get_webview_window("main") {
-            let _ = window.emit(
-                "file-removed-externally",
-                ExternalFileRemovedPayload {
-                    file_path: file_path.to_string(),
-                },
-            );
-        }
+        Some(FileNotice {
+            path: path.to_path_buf(),
+            kind: FileNoticeKind::Removed,
+            subscribers,
+        })
     }
 
-    fn emit_changed(&self, path: &Path, content: String) {
-        let Some(file_path) = path.to_str() else {
+    fn dispatch_notice(&self, notice: &FileNotice) {
+        let Some(file_path) = notice.path.to_str() else {
             return;
         };
-        if let Some(window) = self.app.get_webview_window("main") {
-            let _ = window.emit(
-                "file-changed-externally",
-                ExternalFileChangedPayload {
-                    file_path: file_path.to_string(),
-                    content,
-                },
-            );
+        match &notice.kind {
+            FileNoticeKind::Changed(content) => {
+                for label in &notice.subscribers {
+                    ipc::emit_to_window(
+                        &self.app,
+                        label,
+                        "file-changed-externally",
+                        ExternalFileChangedPayload {
+                            file_path: file_path.to_string(),
+                            content: content.clone(),
+                        },
+                    );
+                }
+            }
+            FileNoticeKind::Removed => {
+                for label in &notice.subscribers {
+                    ipc::emit_to_window(
+                        &self.app,
+                        label,
+                        "file-removed-externally",
+                        ExternalFileRemovedPayload {
+                            file_path: file_path.to_string(),
+                        },
+                    );
+                }
+            }
         }
     }
 }
@@ -504,7 +581,7 @@ mod tests {
         let path = directory.path().join("direct.md");
         fs::write(&path, "initial").unwrap();
         let mut worker = test_worker();
-        worker.watch_file(path.clone(), hash_content("initial"));
+        worker.watch_file(path.clone(), hash_content("initial"), "main".to_string());
 
         fs::write(&path, "changed directly").unwrap();
         worker.check_file(path.clone(), 0);
@@ -522,7 +599,7 @@ mod tests {
         let replacement = directory.path().join("replacement.md");
         fs::write(&path, "initial").unwrap();
         let mut worker = test_worker();
-        worker.watch_file(path.clone(), hash_content("initial"));
+        worker.watch_file(path.clone(), hash_content("initial"), "main".to_string());
 
         fs::write(&replacement, "atomic replacement").unwrap();
         fs::rename(&replacement, &path).unwrap();
@@ -540,7 +617,7 @@ mod tests {
         let path = directory.path().join("reappear.md");
         fs::write(&path, "initial").unwrap();
         let mut worker = test_worker();
-        worker.watch_file(path.clone(), hash_content("initial"));
+        worker.watch_file(path.clone(), hash_content("initial"), "main".to_string());
 
         fs::remove_file(&path).unwrap();
         worker.check_file(path.clone(), 0);
@@ -560,7 +637,7 @@ mod tests {
         let path = directory.path().join("own-write.md");
         fs::write(&path, "initial").unwrap();
         let mut worker = test_worker();
-        worker.watch_file(path.clone(), hash_content("initial"));
+        worker.watch_file(path.clone(), hash_content("initial"), "main".to_string());
 
         fs::write(&path, "saved by app").unwrap();
         worker.handle_message(WorkerMessage::RememberContent {
@@ -581,13 +658,46 @@ mod tests {
         let path = directory.path().join("closed.md");
         fs::write(&path, "initial").unwrap();
         let mut worker = test_worker();
-        worker.watch_file(path.clone(), hash_content("initial"));
+        worker.watch_file(path.clone(), hash_content("initial"), "main".to_string());
         worker.schedule_paths(vec![path.clone()]);
 
-        worker.unwatch_file(&path);
+        worker.unwatch_file(&path, "main");
 
         assert!(!worker.files.contains_key(&path));
         assert!(!worker.pending.contains_key(&path));
+        assert!(!worker.directories.contains_key(directory.path()));
+    }
+
+    #[test]
+    fn subscribers_share_one_directory_count_and_notices_list_only_them() {
+        let directory = test_directory();
+        let first = directory.path().join("one.md");
+        let second = directory.path().join("two.md");
+        fs::write(&first, "initial").unwrap();
+        fs::write(&second, "initial").unwrap();
+        let mut worker = test_worker();
+        worker.watch_file(first.clone(), hash_content("initial"), "a".to_string());
+        worker.watch_file(first.clone(), hash_content("initial"), "b".to_string());
+        worker.watch_file(second.clone(), hash_content("initial"), "a".to_string());
+
+        let parent = worker.directories.get(directory.path()).unwrap();
+        assert_eq!(parent.file_count, 2);
+
+        worker.unwatch_file(&first, "b");
+        assert_eq!(
+            worker.directories.get(directory.path()).unwrap().file_count,
+            2
+        );
+        assert!(worker.files.contains_key(&first));
+
+        fs::write(&first, "changed").unwrap();
+        let notice = worker.check_file(first.clone(), 0).unwrap();
+        assert_eq!(notice.subscribers, vec!["a".to_string()]);
+        assert!(matches!(notice.kind, FileNoticeKind::Changed(_)));
+
+        worker.unwatch_window("a");
+        assert!(!worker.files.contains_key(&first));
+        assert!(!worker.files.contains_key(&second));
         assert!(!worker.directories.contains_key(directory.path()));
     }
 }

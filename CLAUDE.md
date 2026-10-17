@@ -21,6 +21,11 @@ integration.
 
 - `src-tauri/src/lib.rs`: Tauri setup, managed state, startup file queue, and
   window events.
+- `src-tauri/src/session.rs`: open/save/autosave flows, window creation, and
+  native drag-and-drop resolution.
+- `src-tauri/src/window_registry.rs`: window labels and roles, per-window
+  workspace claims, file ownership, open routing, and the single-slot tab drag.
+- `src-tauri/src/ipc.rs`: per-window event emit helpers (never broadcast).
 - `src-tauri/src/files.rs`: open, save, autosave, recent files, and active-path
   write authorization.
 - `src-tauri/src/file_sync.rs`: parent-directory watches, hashes, debounce,
@@ -29,10 +34,13 @@ integration.
 - `src-tauri/src/external.rs`: external URL protocol allowlist.
 - `src-tauri/src/export.rs`: ZIP export.
 - `src-tauri/src/menu.rs`: native menu and renderer event dispatch.
+- `frontend/src/workspace-store.js`: per-window scratch-tab storage in
+  IndexedDB (tabs, content, workspace claim reconciliation, global
+  "Untitled N" counter).
 - `frontend/src/tauri-bridge.js`: the `window.electron` compatibility API over
   Tauri commands and events.
 - `frontend/src/renderer.js`: tabs, Monaco editors, Markdown preview, settings,
-  persistence, and conflict UI.
+  persistence, tab drag-and-drop, and conflict UI.
 
 ## Security Model
 
@@ -62,10 +70,29 @@ integration.
 - On macOS, unbundled dev and installed app builds use separate WebKit and
   Application Support roots (`sainte-devote` versus
   `dev.izumiz.sainte-devote`). Export scratch tabs before switching surfaces.
+- Tab drag-and-drop has no single source of truth for "where did the drag end",
+  because the engines disagree. WKWebView promotes a page drag carrying a custom
+  MIME type to a native drag session: the page then receives only `dragstart` /
+  `dragend` (no `dragenter` / `dragover` / `drop`), while Rust receives
+  `DragDropEvent::Enter` / `Over` / `Drop` with positions. Chromium-based
+  webviews such as WebView2 keep the drag in the page instead and deliver DOM
+  events (and may never promote it to a native drop at all). Both paths are
+  therefore implemented: Rust drives the in-window insertion preview and drop
+  resolution on WebKit, the DOM `dragover` / `drop` handlers do the same on
+  Chromium, and `drop-tab-in-window` lets a DOM drop resolve the pending payload
+  so cross-window transfers work even when no native drop is delivered.
+- In-window drops are resolved by the drop position (tab bar band = reorder,
+  anywhere else in the window = keep the tab). Detaching into a new window only
+  happens from the `dragend` fallback when the release never reached a window
+  (desktop, another app), which is why a self-drop must never be read as
+  "released outside".
+- Each window owns a scratch-tab workspace in IndexedDB; "Untitled N" numbers
+  come from a shared counter in the `meta` store so they stay unique across
+  windows.
 
 ## Completion
 
 Run `pnpm check:tauri`, `cargo test --manifest-path src-tauri/Cargo.toml`,
-`pnpm lint`, and `git diff --check`. Manual GUI checks are required for changes
-to drag and drop, native menus, file synchronization, startup/open-file paths,
-or platform packaging.
+`pnpm test:frontend`, `pnpm lint`, and `git diff --check`. Manual GUI checks are
+required for changes to drag and drop, native menus, file synchronization,
+startup/open-file paths, or platform packaging.

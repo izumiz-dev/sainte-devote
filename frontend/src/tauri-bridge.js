@@ -2,7 +2,8 @@
 // renderer stays independent of the desktop shell. window.__TAURI__ is exposed
 // by app.withGlobalTauri in tauri.conf.json.
 (function () {
-  const { core, event } = window.__TAURI__;
+  const { core } = window.__TAURI__;
+  const currentWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 
   const RECEIVE_CHANNELS = new Set([
     'theme-changed',
@@ -16,6 +17,12 @@
     'file-removed-externally',
     'drop-overlay-show',
     'drop-overlay-hide',
+    'window-close-requested',
+    'settings-changed',
+    'tab-drag-over',
+    'tab-dropped-in-window',
+    'tab-drag-consumed',
+    'open-tab',
   ]);
 
   // renderer.js channel name -> Tauri command name for invoke().
@@ -23,6 +30,10 @@
     'open-file-dialog': 'open_file_dialog',
     'get-recent-files': 'get_recent_files',
     'open-recent-file': 'open_recent_file',
+    'open-new-window': 'open_new_window',
+    'open-new-window-with-tab': 'open_new_window_with_tab',
+    'get-window-context': 'get_window_context',
+    'claim-workspaces': 'claim_workspaces',
   };
 
   // renderer.js passes some IPC args as a bare value (Electron style:
@@ -42,9 +53,15 @@
     'save-file': 'save_file',
     'save-file-to-path': 'save_file_to_path',
     'close-file': 'close_file',
+    'begin-tab-drag': 'begin_tab_drag',
+    'clear-tab-drag': 'clear_tab_drag',
+    'drop-tab-in-window': 'drop_tab_in_window',
     'open-external': 'open_external',
     'export-tabs-data': 'export_tabs_data',
     'set-title-bar-theme': 'set_title_bar_theme',
+    'close-window-confirmed': 'close_window_confirmed',
+    'close-window-cancelled': 'close_window_cancelled',
+    'broadcast-settings': 'broadcast_settings',
   };
 
   // Same bare-arg wrapping as above, but for send() channels.
@@ -83,7 +100,7 @@
         return () => {};
       }
       let unlisten = () => {};
-      const registered = event.listen(channel, (evt) => func(evt.payload)).then((fn) => {
+      const registered = currentWindow.listen(channel, (evt) => func(evt.payload)).then((fn) => {
         unlisten = fn;
       });
       pendingListenerRegistrations.push(registered);

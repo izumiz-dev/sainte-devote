@@ -50,8 +50,14 @@ integration. There is no Node runtime in the shipped app.
 ### Rust backend (`src-tauri/src/`)
 
 - **`lib.rs`** — Tauri setup, managed state (`ActiveFilePathsState`,
-  `PendingFileOpensState`, `RendererReadyState`), the startup file-open queue,
-  Tauri commands, and window events.
+  `WindowRegistryState`, `PendingFileOpensState`, `RendererReadyState`), the
+  startup file-open queue, Tauri commands, and window events.
+- **`session.rs`** — open/save/autosave flows, editor-window creation, and
+  native drag-and-drop resolution (merge, detach, in-window drop).
+- **`window_registry.rs`** — window labels/roles, per-window workspace claims,
+  file ownership, open routing, and the single-slot tab drag payload.
+- **`ipc.rs`** — per-window event emit helpers. Use these instead of a
+  broadcasting `emit`.
 - **`files.rs`** — open, save, autosave, recent files, and active-path write
   authorization. Unix reads/writes use `O_NOFOLLOW`.
 - **`file_sync.rs`** — parent-directory watches, per-path hashes, debounce,
@@ -68,7 +74,10 @@ integration. There is no Node runtime in the shipped app.
 
 - **`src/renderer.js`** — tabs, per-tab Monaco editors, Markdown preview,
   command palette, settings, persistence (IndexedDB for scratch tabs,
-  localStorage for preferences), and conflict UI. No Node access.
+  localStorage for preferences), tab drag-and-drop, and conflict UI. No Node
+  access.
+- **`src/workspace-store.js`** — per-window scratch-tab storage in IndexedDB
+  (tabs, content, workspace claim reconciliation, shared "Untitled N" counter).
 - **`src/tauri-bridge.js`** — re-implements the old Electron `window.electron`
   preload API over Tauri commands and events, so the renderer stays independent
   of the shell. `window.__TAURI__` is exposed via `withGlobalTauri`. Channels
@@ -120,6 +129,23 @@ integration. There is no Node runtime in the shipped app.
 - On macOS, unbundled dev and installed builds use separate WebKit and
   Application Support roots (`sainte-devote` vs `dev.izumiz.sainte-devote`).
   Export scratch tabs before switching surfaces.
+- **Tab drag-and-drop differs per engine.** WKWebView promotes a page drag with
+  a custom MIME type to a native drag session, so the page receives only
+  `dragstart` / `dragend` (never `dragenter` / `dragover` / `drop`) and Rust
+  receives `DragDropEvent::Enter` / `Over` / `Drop` with positions. Chromium
+  webviews (WebView2) keep the drag in the page instead. Both paths are
+  implemented: Rust streams `tab-drag-over` for the insertion preview and
+  resolves `tab-dropped-in-window` / `tab-drag-consumed`, while the DOM
+  `dragover` / `drop` handlers cover Chromium and `drop-tab-in-window` resolves
+  a DOM drop against the pending payload.
+- A drop released **inside** the source window is never "outside": it commits
+  the reorder when it lands in the tab bar band, otherwise it leaves the tab in
+  place. Detaching into a new window happens only from the `dragend` fallback
+  for releases that reached no window at all (desktop, other apps).
+- Each window owns a scratch-tab workspace in IndexedDB; "Untitled N" numbers
+  come from a shared counter in the `meta` store so they stay unique across
+  windows. Transfers record the source workspace + tab id so a crash between
+  "remove at source" and "persist at target" cannot resurrect a duplicate.
 
 ## Conventions
 

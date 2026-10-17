@@ -11,6 +11,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Sainte Devote",
         "width": 1000,
         "height": 700,

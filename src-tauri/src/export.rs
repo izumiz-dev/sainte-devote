@@ -2,7 +2,9 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::Path;
-use tauri::{Emitter, WebviewWindow};
+use tauri::{Manager, WebviewWindow};
+
+use crate::ipc;
 use tauri_plugin_dialog::DialogExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -111,23 +113,41 @@ pub async fn export_tabs_data(
         Ok(path) => validate::with_zip_extension(&path),
         Err(error) => {
             let message = format!("Invalid export path: {error}");
-            let _ = window.emit("save-file-error", &message);
+            ipc::emit_to_window(
+                window.app_handle(),
+                window.label(),
+                "save-file-error",
+                message,
+            );
             return Ok(());
         }
     };
 
     if let Err(error) = write_zip(&path, &tabs_data) {
-        let _ = window.emit("save-file-error", &error);
+        ipc::emit_to_window(
+            window.app_handle(),
+            window.label(),
+            "save-file-error",
+            error,
+        );
         return Ok(());
     }
 
     let Some(path_string) = path.to_str() else {
-        let _ = window.emit("save-file-error", "Invalid UTF-8 in export path");
+        ipc::emit_to_window(
+            window.app_handle(),
+            window.label(),
+            "save-file-error",
+            "Invalid UTF-8 in export path",
+        );
         return Ok(());
     };
-    window
-        .emit("save-file-success", path_string)
-        .map_err(|error| format!("Failed to emit save-file-success: {error}"))?;
+    ipc::emit_to_window(
+        window.app_handle(),
+        window.label(),
+        "save-file-success",
+        path_string.to_string(),
+    );
     Ok(())
 }
 

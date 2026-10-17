@@ -1,15 +1,81 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tauri::{Manager, Runtime};
 
 use crate::validate;
 
-/// Active file paths that the user has explicitly chosen (via file dialog or drag-drop).
-/// Only these paths can be written to via autosave. This implements the security model
-/// where writes are only allowed to files the user has selected via a file chooser gesture.
-pub type ActiveFilePaths = Mutex<HashSet<PathBuf>>;
+/// Write grants scoped to the window that received the file-selection gesture.
+/// A path may be open in only one window, but the grant is still stored per
+/// window so closing or reloading one window cannot authorize another.
+pub struct ActiveFilePathsState(Mutex<HashMap<PathBuf, HashSet<String>>>);
+
+impl ActiveFilePathsState {
+    pub fn new() -> Self {
+        Self(Mutex::new(HashMap::new()))
+    }
+
+    fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, HashSet<String>>> {
+        self.0.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    pub fn grant(&self, path: &Path, label: &str) {
+        self.lock()
+            .entry(path.to_path_buf())
+            .or_default()
+            .insert(label.to_string());
+    }
+
+    pub fn revoke(&self, path: &Path, label: &str) {
+        let mut paths = self.lock();
+        let Some(labels) = paths.get_mut(path) else {
+            return;
+        };
+        labels.remove(label);
+        if labels.is_empty() {
+            paths.remove(path);
+        }
+    }
+
+    pub fn revoke_window(&self, label: &str) {
+        self.lock().retain(|_, labels| {
+            labels.remove(label);
+            !labels.is_empty()
+        });
+    }
+
+    pub fn is_granted(&self, path: &Path, label: &str) -> bool {
+        self.lock()
+            .get(path)
+            .is_some_and(|labels| labels.contains(label))
+    }
+}
+
+impl Default for ActiveFilePathsState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Serializes read-modify-write of recent-files.json across windows.
+pub struct RecentFilesState(Mutex<()>);
+
+impl RecentFilesState {
+    pub fn new() -> Self {
+        Self(Mutex::new(()))
+    }
+
+    fn lock(&self) -> MutexGuard<'_, ()> {
+        self.0.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+}
+
+impl Default for RecentFilesState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Recent files entry. Matches the Electron build's recent-files.json format.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -51,6 +117,14 @@ pub fn load_recent_files<R: Runtime, T: Manager<R>>(app: &T) -> Vec<RecentFile> 
     }
 }
 
+pub fn snapshot_recent_files<R: Runtime, T: Manager<R>>(
+    app: &T,
+    recent: &RecentFilesState,
+) -> Vec<RecentFile> {
+    let _guard = recent.lock();
+    load_recent_files(app)
+}
+
 /// Save recent files to app data directory.
 pub fn save_recent_files<R: Runtime, T: Manager<R>>(app: &T, files: &[RecentFile]) {
     let app_data_dir = match app.path().app_data_dir() {
@@ -82,7 +156,13 @@ pub fn save_recent_files<R: Runtime, T: Manager<R>>(app: &T, files: &[RecentFile
 }
 
 /// Add a file to recent files (or update timestamp if already exists).
-pub fn add_to_recent_files<R: Runtime, T: Manager<R>>(app: &T, path: &Path, title: Option<String>) {
+pub fn add_to_recent_files<R: Runtime, T: Manager<R>>(
+    app: &T,
+    recent: &RecentFilesState,
+    path: &Path,
+    title: Option<String>,
+) {
+    let _guard = recent.lock();
     let mut recent_files = load_recent_files(app);
 
     // Remove existing entry with same path if present
@@ -139,16 +219,16 @@ pub fn read_file_content(path: &Path) -> Result<String, String> {
 pub fn write_file_content(
     path: &Path,
     content: &str,
-    active_paths: &ActiveFilePaths,
+    active_paths: &ActiveFilePathsState,
+    label: &str,
 ) -> Result<(), String> {
     validate::validate_writable_path(path)?;
 
-    // Check if path is in activeFilePaths (user has explicitly chosen this file)
-    let paths = active_paths.lock().unwrap();
-    if !paths.contains(path) {
+    // Check if this window was granted the path (user selected it from this window,
+    // or it was transferred to the window that already owned it).
+    if !active_paths.is_granted(path, label) {
         return Err("Path not in activeFilePaths (user did not select this file)".to_string());
     }
-    drop(paths);
 
     let mut file = crate::fs_open::open_write_nofollow(path)?;
     std::io::Write::write_all(&mut file, content.as_bytes())
@@ -160,7 +240,6 @@ pub fn write_file_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use std::fs;
 
     fn test_temp_root() -> PathBuf {
@@ -178,9 +257,10 @@ mod tests {
     fn write_then_read_round_trip_through_active_paths() {
         let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
         let path = directory.path().join("note.md");
-        let active: ActiveFilePaths = Mutex::new(HashSet::from([path.clone()]));
+        let active = ActiveFilePathsState::new();
+        active.grant(&path, "main");
 
-        write_file_content(&path, "hello from test", &active).unwrap();
+        write_file_content(&path, "hello from test", &active, "main").unwrap();
         assert_eq!(read_file_content(&path).unwrap(), "hello from test");
     }
 
@@ -188,9 +268,9 @@ mod tests {
     fn write_refuses_path_outside_active_file_paths() {
         let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
         let path = directory.path().join("note.md");
-        let active: ActiveFilePaths = Mutex::new(HashSet::new());
+        let active = ActiveFilePathsState::new();
 
-        let error = write_file_content(&path, "nope", &active).unwrap_err();
+        let error = write_file_content(&path, "nope", &active, "main").unwrap_err();
         assert!(
             error.contains("activeFilePaths"),
             "unexpected error: {error}"
@@ -238,5 +318,33 @@ mod tests {
             "unexpected error: {error}"
         );
         assert_eq!(fs::read_to_string(&target).unwrap(), "secret");
+    }
+
+    #[test]
+    fn grants_are_per_window() {
+        let directory = tempfile::tempdir_in(test_temp_root()).unwrap();
+        let path = directory.path().join("note.md");
+        let active = ActiveFilePathsState::new();
+        active.grant(&path, "a");
+
+        write_file_content(&path, "from a", &active, "a").unwrap();
+        let error = write_file_content(&path, "from b", &active, "b").unwrap_err();
+        assert!(
+            error.contains("activeFilePaths"),
+            "unexpected error: {error}"
+        );
+
+        active.revoke(&path, "b");
+        assert!(active.is_granted(&path, "a"));
+        active.revoke(&path, "a");
+        assert!(!active.is_granted(&path, "a"));
+
+        active.grant(&path, "a");
+        active.grant(&path, "b");
+        active.revoke_window("b");
+        assert!(active.is_granted(&path, "a"));
+        assert!(!active.is_granted(&path, "b"));
+        active.revoke_window("a");
+        assert!(!active.is_granted(&path, "a"));
     }
 }

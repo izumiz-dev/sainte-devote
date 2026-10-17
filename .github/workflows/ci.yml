@@ -73,3 +73,6 @@ jobs:
 
       - name: Test Rust
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Test frontend workspace store
+        run: pnpm test:frontend

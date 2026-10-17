@@ -1,5 +1,5 @@
 use serde_json::Value;
-use tauri::{AppHandle, Manager, Theme};
+use tauri::{AppHandle, Manager, Runtime, Theme};
 
 const NATIVE_TITLEBAR_PLATFORM: &str = "linux";
 
@@ -23,7 +23,10 @@ fn node_style_platform() -> &'static str {
 
 /// Mirrors main.js's sendMonacoSettings: read monacorc.json, layer in the
 /// current theme/platform, and hand the merged object to the renderer.
-pub fn build_monaco_settings(app: &AppHandle, theme: Theme) -> Result<Value, String> {
+pub fn build_monaco_settings<R: Runtime>(
+    app: &AppHandle<R>,
+    theme: Theme,
+) -> Result<Value, String> {
     let resource_path = app
         .path()
         .resolve("monacorc.json", tauri::path::BaseDirectory::Resource)

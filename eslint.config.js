@@ -28,6 +28,13 @@ module.exports = [
         cancelAnimationFrame: 'readonly',
         URL: 'readonly',
         indexedDB: 'readonly',
+        // IndexedDB API / Web security and binary globals (workspace-store)
+        IDBKeyRange: 'readonly',
+        crypto: 'readonly',
+        globalThis: 'readonly',
+        Uint8Array: 'readonly',
+        // Scratch workspace store (loaded before the renderer bundle)
+        workspaceStore: 'readonly',
         // highlight.js (CDNでグローバル読み込み)
         hljs: 'readonly',
         // DOMPurify (scriptタグでグローバル読み込み)

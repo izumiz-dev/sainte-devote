@@ -1,125 +1,34 @@
+#![warn(clippy::disallowed_methods)]
+
 mod export;
 mod external;
 mod file_sync;
 mod files;
 mod fs_open;
+mod ipc;
 mod menu;
+mod session;
 mod settings;
 mod validate;
+mod window_registry;
 
-use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Manager, State, WindowEvent};
 
-// Global state for active file paths (files user has explicitly selected)
-pub struct ActiveFilePathsState(Mutex<HashSet<PathBuf>>);
+use crate::files::{ActiveFilePathsState, RecentFilesState};
+use crate::session::{EmitPolicy, OpenOutcome};
+use crate::window_registry::{WindowContext, WindowRegistryState};
 
-// Pending file opens queued before the renderer signaled readiness. Mirrors
-// main.js's filePathsToOpen[] + flushPendingFileOpens(): argv / macOS
-// open-file / second-instance can arrive before the webview has registered its
-// event listeners, so we hold them here and flush on renderer_ready.
-pub struct PendingFileOpensState(Mutex<Vec<PathBuf>>);
+const MAX_SETTINGS_BYTES: usize = 16 * 1024;
 
-// Whether the renderer has signaled renderer_ready. Lets late-arriving open
-// requests (single-instance, second open-file after launch) emit immediately
-// instead of queuing forever.
-pub struct RendererReadyState(AtomicBool);
-
-fn emit_monaco_settings(window: &tauri::WebviewWindow) {
-    let theme = window.theme().unwrap_or(tauri::Theme::Light);
-    match settings::build_monaco_settings(window.app_handle(), theme) {
-        Ok(payload) => {
-            if let Err(e) = window.emit("monaco-settings", payload) {
-                eprintln!("failed to emit monaco-settings: {e}");
-            }
-        }
-        Err(e) => eprintln!("failed to build monaco settings: {e}"),
-    }
-}
-
-// Mirrors main.js's 'renderer-ready' handler: renderer.js registers all its
-// IPC listeners synchronously during Monaco's AMD load, then sends this as
-// the last step. `window` is injected by Tauri from the invoking webview —
-// the JS-side invoke('renderer_ready') call takes no extra argument for it.
-// Emitting monaco-settings only once this fires (rather than from `setup`,
-// which races the renderer's event.listen() Promise) avoids losing the
-// event to a startup race. Also flushes any file opens queued during startup
-// (argv / macOS open-file / second-instance).
 #[tauri::command]
-fn renderer_ready(
-    window: tauri::WebviewWindow,
-    pending: State<'_, PendingFileOpensState>,
-    ready_state: State<'_, RendererReadyState>,
-) {
-    ready_state
-        .0
-        .store(true, std::sync::atomic::Ordering::SeqCst);
-    emit_monaco_settings(&window);
-    flush_pending_opens(window.app_handle(), &window, &pending);
-}
-
-// Drains the pending-opens queue and emits a 'file-opened' event per path,
-// granting write access (argv / open-file / drag-drop are all explicit user
-// gestures). Mirrors main.js flushPendingFileOpens() + openFileInRenderer().
-fn flush_pending_opens<R: tauri::Runtime, T: tauri::Emitter<R> + tauri::Manager<R>>(
-    app: &AppHandle,
-    window: &T,
-    pending: &PendingFileOpensState,
-) {
-    let paths = {
-        let mut p = pending.0.lock().unwrap();
-        std::mem::take(&mut *p)
-    };
-
-    let active = app.state::<ActiveFilePathsState>();
-    let sync = app.state::<file_sync::ExternalFileSyncState>();
-    let mut seen: HashSet<PathBuf> = HashSet::new();
-    for path in paths {
-        if !seen.insert(path.clone()) {
-            continue;
-        }
-        let content = match files::read_file_content(&path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("flush_pending_opens: skipping {}: {e}", path.display());
-                continue;
-            }
-        };
-        let path_str = match path.to_str() {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-
-        // Grant write access (startup open = explicit user gesture)
-        {
-            let mut p = active.0.lock().unwrap();
-            p.insert(path.clone());
-        }
-
-        let title = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|s| s.to_string());
-        files::add_to_recent_files(app, &path, title);
-        sync.watch_file(&path, &content);
-
-        let _ = window.emit(
-            "file-opened",
-            serde_json::json!({
-                "filePath": path_str,
-                "content": content,
-                "readOnly": false,
-            }),
-        );
-    }
+fn renderer_ready(window: tauri::WebviewWindow) {
+    session::on_renderer_ready(window.app_handle(), &window);
 }
 
 #[tauri::command]
 fn update_window_title(window: tauri::WebviewWindow, title: String) {
-    if let Err(e) = window.set_title(&title) {
-        eprintln!("failed to set window title: {e}");
+    if let Err(error) = window.set_title(&title) {
+        eprintln!("failed to set window title: {error}");
     }
 }
 
@@ -132,8 +41,8 @@ fn set_title_bar_theme(window: tauri::WebviewWindow, is_dark: bool, follows_syst
     } else {
         Some(tauri::Theme::Light)
     };
-    if let Err(e) = window.set_theme(theme) {
-        eprintln!("failed to set window theme: {e}");
+    if let Err(error) = window.set_theme(theme) {
+        eprintln!("failed to set window theme: {error}");
     }
 }
 
@@ -143,17 +52,10 @@ fn open_external(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn open_file_dialog(
-    app: AppHandle,
-    active_paths: State<'_, ActiveFilePathsState>,
-) -> Result<Vec<serde_json::Value>, String> {
+async fn open_file_dialog(window: tauri::WebviewWindow) -> Result<Vec<serde_json::Value>, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    // blocking_* must NOT run on the main thread; async commands run on a
-    // worker thread, so this is the correct place to use the blocking dialog.
-    // Electron's dialog allowed multiSelections; Tauri's blocking_pick_files
-    // mirrors that. Returns [] on cancel, matching the Electron contract.
-    let file_paths = app
+    let file_paths = window
         .dialog()
         .file()
         .add_filter("Markdown Files", &["md", "markdown", "txt"])
@@ -164,97 +66,52 @@ async fn open_file_dialog(
         return Ok(Vec::new());
     };
 
-    let sync = app.state::<file_sync::ExternalFileSyncState>();
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
     let mut files = Vec::new();
-    for fp in file_paths {
-        let path = match fp.into_path() {
-            Ok(p) => p,
-            Err(_) => continue,
+    for file_path in file_paths {
+        let Ok(path) = file_path.into_path() else {
+            continue;
         };
-
-        // validate + read; skip invalid files (matches Electron's `continue`)
-        let content = match files::read_file_content(&path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("open_file_dialog: skipping {}: {e}", path.display());
-                continue;
+        match session::open_one(&app, &path, &label, true, EmitPolicy::IfTransferred) {
+            OpenOutcome::Delivered(opened) if !opened.transferred => {
+                files.push(serde_json::json!({
+                    "filePath": opened.file_path,
+                    "content": opened.content,
+                }));
             }
-        };
-
-        let path_str = match path.to_str() {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-
-        // Add to activeFilePaths (write access granted via dialog gesture)
-        {
-            let mut paths = active_paths.0.lock().unwrap();
-            paths.insert(path.clone());
+            OpenOutcome::Delivered(opened) => {
+                session::focus_label(&app, &opened.target);
+            }
+            OpenOutcome::Rejected(error) => {
+                eprintln!("open_file_dialog: skipping {}: {error}", path.display());
+            }
+            OpenOutcome::Queued => {}
         }
-
-        // Add to recent files
-        let title = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|s| s.to_string());
-        files::add_to_recent_files(&app, &path, title);
-        sync.watch_file(&path, &content);
-
-        files.push(serde_json::json!({
-            "filePath": path_str,
-            "content": content,
-        }));
     }
-
     Ok(files)
 }
 
-// Mirrors main.js's 'save-file-to-path' (autosave to an already-bound path).
-// Success is SILENT (no event) — only 'save-file-error' is emitted on failure.
-// renderer.js's save-file-success listener drives the Save-As binding + toast,
-// and must NOT fire on every 300ms autosave, so we deliberately do not emit it
-// here (matches the Electron build exactly).
 #[tauri::command]
 fn save_file_to_path(
     app: AppHandle,
     window: tauri::WebviewWindow,
     file_path: String,
     content: String,
-    active_paths: State<'_, ActiveFilePathsState>,
 ) -> Result<(), String> {
-    let path = PathBuf::from(&file_path);
-
-    if let Err(e) = files::write_file_content(&path, &content, &active_paths.0) {
-        let _ = window.emit("save-file-error", e);
-        return Ok(());
-    }
-    app.state::<file_sync::ExternalFileSyncState>()
-        .remember_content(&path, &content);
-
-    // Update recent files timestamp (silent — no save-file-success emit)
-    let title = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string());
-    files::add_to_recent_files(&app, &path, title);
-
+    session::autosave(&app, window.label(), &file_path, &content);
     Ok(())
 }
-// { content, fileName }; we show the dialog, write, and reply via events:
-// 'save-file-success' (path string) or 'save-file-error' (message). Errors are
-// emitted as events rather than returned as Err, because renderer.js listens
-// for them rather than awaiting the send (it's a fire-and-forget send()).
+
 #[tauri::command]
 async fn save_file(
-    app: AppHandle,
     window: tauri::WebviewWindow,
     content: String,
     file_name: String,
-    active_paths: State<'_, ActiveFilePathsState>,
 ) -> Result<(), String> {
     use tauri_plugin_dialog::DialogExt;
 
-    let file_path = app
+    let file_path = window
         .dialog()
         .file()
         .set_file_name(&file_name)
@@ -262,262 +119,193 @@ async fn save_file(
         .add_filter("All Files", &["*"])
         .blocking_save_file();
 
-    let file_path = match file_path {
-        Some(p) => p,
-        None => return Ok(()), // user cancelled
+    let Some(file_path) = file_path else {
+        return Ok(());
     };
-
     let path = match file_path.into_path() {
-        Ok(p) => validate::with_default_extension(&p),
-        Err(e) => {
-            let _ = window.emit("save-file-error", format!("Invalid file path: {e}"));
+        Ok(path) => path,
+        Err(error) => {
+            ipc::emit_to_window(
+                window.app_handle(),
+                window.label(),
+                "save-file-error",
+                format!("Invalid file path: {error}"),
+            );
             return Ok(());
         }
     };
-
-    if let Err(e) = validate::validate_writable_path(&path) {
-        let _ = window.emit("save-file-error", e);
-        return Ok(());
-    }
-
-    // Add to activeFilePaths BEFORE writing (write_file_content checks membership)
-    {
-        let mut paths = active_paths.0.lock().unwrap();
-        paths.insert(path.clone());
-    }
-
-    if let Err(e) = files::write_file_content(&path, &content, &active_paths.0) {
-        active_paths.0.lock().unwrap().remove(&path);
-        let _ = window.emit("save-file-error", e);
-        return Ok(());
-    }
-    app.state::<file_sync::ExternalFileSyncState>()
-        .watch_file(&path, &content);
-
-    let path_str = match path.to_str() {
-        Some(s) => s.to_string(),
-        None => {
-            let _ = window.emit("save-file-error", "Invalid UTF-8 in saved path");
-            return Ok(());
-        }
-    };
-
-    // Add to recent files
-    let title = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string());
-    files::add_to_recent_files(&app, &path, title);
-
-    // Notify renderer of success
-    window
-        .emit("save-file-success", &path_str)
-        .map_err(|e| format!("Failed to emit save-file-success: {e}"))?;
-
+    session::save_as(window.app_handle(), window.label(), &path, &content);
     Ok(())
 }
 
 #[tauri::command]
 fn close_file(
-    active_paths: State<'_, ActiveFilePathsState>,
-    sync: State<'_, file_sync::ExternalFileSyncState>,
+    app: AppHandle,
+    window: tauri::WebviewWindow,
     file_path: String,
 ) -> Result<(), String> {
-    let path = PathBuf::from(&file_path);
-    active_paths.0.lock().unwrap().remove(&path);
-    sync.unwatch_file(&path);
+    session::close_path(&app, window.label(), &file_path);
     Ok(())
 }
 
-// Returns recent files as an array of path strings, matching main.js's
-// [...recentFilePaths]. renderer.js treats the result as string[] and does
-// forEach(filePath => ...).
+/// Register the tab this window started dragging, so another window can merge
+/// it when the drag is dropped there.
 #[tauri::command]
-fn get_recent_files(app: AppHandle) -> Vec<String> {
-    files::load_recent_files(&app)
+fn begin_tab_drag(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    tab_id: i64,
+    origin_workspace_id: Option<String>,
+    title: String,
+    content: String,
+    file_path: Option<String>,
+) -> Result<(), String> {
+    if !session::begin_tab_drag(
+        &app,
+        window.label(),
+        tab_id,
+        origin_workspace_id,
+        title,
+        content,
+        file_path,
+    ) {
+        return Err("unknown window".to_string());
+    }
+    Ok(())
+}
+
+/// The drag ended without leaving the webview, so drop the registration.
+#[tauri::command]
+fn clear_tab_drag(app: AppHandle, window: tauri::WebviewWindow) {
+    session::clear_tab_drag(&app, window.label());
+}
+
+/// An in-page tab drop landed on this window (Chromium / WebView2, where a
+/// page drag is not promoted to a native drag session). `x` / `y` are the drop
+/// position in CSS pixels. Resolution is identical to the native drop path:
+/// released in this window it commits the reorder, released elsewhere it
+/// merges the tab into this window.
+#[tauri::command]
+fn drop_tab_in_window(app: AppHandle, window: tauri::WebviewWindow, x: f64, y: f64) {
+    session::handle_tab_drop(&app, window.label(), Some((x, y)));
+}
+
+#[tauri::command]
+fn get_recent_files(app: AppHandle, recent: State<'_, RecentFilesState>) -> Vec<String> {
+    files::snapshot_recent_files(&app, &recent)
         .into_iter()
-        .filter_map(|f| f.path.to_str().map(|s| s.to_string()))
+        .filter_map(|file| file.path.to_str().map(str::to_string))
         .collect()
 }
 
-// Mirrors main.js's 'open-recent-file': validates the path is in the recent
-// list (read-only reopen — no fresh file-selection gesture, so NO write access
-// granted), reads content, emits 'file-opened' with readOnly: true.
-// Returns { ok: bool, reason?: string } so the renderer can fall back silently.
 #[tauri::command]
 fn open_recent_file(
     app: AppHandle,
     window: tauri::WebviewWindow,
     file_path: String,
-    _active_paths: State<'_, ActiveFilePathsState>,
 ) -> serde_json::Value {
-    let path = PathBuf::from(&file_path);
-
-    // Must be a tracked recent file (mirrors main.js isTrackedRecentFile)
-    let is_tracked = files::load_recent_files(&app)
-        .iter()
-        .any(|f| f.path == path);
-    if !is_tracked {
-        return serde_json::json!({ "ok": false, "reason": "File is not in the recent list" });
-    }
-
-    let content = match files::read_file_content(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            return serde_json::json!({ "ok": false, "reason": e });
-        }
-    };
-
-    // Do NOT add to activeFilePaths - recent files are read-only
-    // until explicitly opened via file dialog
-
-    // Update timestamp and watch for external changes without granting writes.
-    files::add_to_recent_files(&app, &path, None);
-    app.state::<file_sync::ExternalFileSyncState>()
-        .watch_file(&path, &content);
-
-    // Notify renderer (read-only)
-    if let Err(e) = window.emit(
-        "file-opened",
-        serde_json::json!({
-            "filePath": file_path,
-            "content": content,
-            "readOnly": true
-        }),
-    ) {
-        eprintln!("failed to emit file-opened: {e}");
-        return serde_json::json!({ "ok": false, "reason": format!("emit failed: {e}") });
-    }
-
-    serde_json::json!({ "ok": true })
+    session::open_recent(&app, window.label(), &file_path)
 }
 
-// Handles DragDrop WindowEvents (tauri 2.11). Enter/Leave drive the drop
-// overlay; Drop validates+reads each path and emits 'file-opened' with
-// write access granted (drag-drop is an explicit user gesture, matching
-// main.js's openFileInRenderer({ grantWriteAccess: true })).
-fn handle_drag_drop<R: tauri::Runtime, T: tauri::Emitter<R> + tauri::Manager<R>>(
-    window: &T,
-    event: &tauri::DragDropEvent,
-) {
-    match event {
-        tauri::DragDropEvent::Enter { .. } => {
-            let _ = window.emit("drop-overlay-show", ());
-        }
-        tauri::DragDropEvent::Leave => {
-            let _ = window.emit("drop-overlay-hide", ());
-        }
-        tauri::DragDropEvent::Drop { paths, .. } => {
-            let _ = window.emit("drop-overlay-hide", ());
-            let app = window.app_handle().clone();
-            let active_paths = app.state::<ActiveFilePathsState>();
-            let sync = app.state::<file_sync::ExternalFileSyncState>();
-            for path in paths {
-                let content = match files::read_file_content(path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!("drag-drop: skipping {}: {e}", path.display());
-                        continue;
-                    }
-                };
-                let path_str = match path.to_str() {
-                    Some(s) => s.to_string(),
-                    None => continue,
-                };
+#[tauri::command]
+fn open_new_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
+    session::create_editor_window(&app, Some(window.label().to_string()))
+}
 
-                // Grant write access (drag-drop = explicit user gesture)
-                {
-                    let mut p = active_paths.0.lock().unwrap();
-                    p.insert(path.clone());
-                }
+#[tauri::command]
+fn open_new_window_with_tab(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    tab_id: i64,
+    origin_workspace_id: Option<String>,
+    tab_title: String,
+    tab_content: String,
+    file_path: Option<String>,
+) -> Result<String, String> {
+    session::create_editor_window_with_tab(
+        &app,
+        session::TabHandoff {
+            source_label: window.label(),
+            tab_id,
+            origin_workspace_id: origin_workspace_id.as_deref(),
+            title: &tab_title,
+            content: &tab_content,
+            file_path: file_path.as_deref(),
+        },
+        Some(window.label().to_string()),
+    )
+}
 
-                let title = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|s| s.to_string());
-                files::add_to_recent_files(&app, path, title);
-                sync.watch_file(path, &content);
+#[tauri::command]
+fn get_window_context(
+    window: tauri::WebviewWindow,
+    registry: State<'_, WindowRegistryState>,
+) -> Result<WindowContext, String> {
+    registry
+        .lock()
+        .context(window.label())
+        .ok_or_else(|| "unknown window".to_string())
+}
 
-                let _ = window.emit(
-                    "file-opened",
-                    serde_json::json!({
-                        "filePath": path_str,
-                        "content": content,
-                        "readOnly": false,
-                    }),
-                );
-            }
-        }
-        // Over fires continuously during the drag; no overlay change needed.
-        tauri::DragDropEvent::Over { .. } => {}
-        _ => {}
+#[tauri::command]
+fn claim_workspaces(
+    window: tauri::WebviewWindow,
+    registry: State<'_, WindowRegistryState>,
+    ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    registry
+        .lock()
+        .claim(window.label(), &ids)
+        .map_err(str::to_string)
+}
+
+#[tauri::command]
+fn close_window_confirmed(window: tauri::WebviewWindow, registry: State<'_, WindowRegistryState>) {
+    let label = window.label().to_string();
+    registry.lock().mark_closing(&label);
+    if let Err(error) = window.destroy() {
+        eprintln!("failed to destroy window {label}: {error}");
     }
 }
 
-// Extract file paths from argv. Unlike main.js (which skipped 2 args in dev
-// because electronmon launched as `electron <script>`), Tauri launches the
-// compiled binary directly in BOTH dev and release, so argv[0] is always the
-// binary and file args start at index 1. Drop flags starting with '-' and
-// validate each remaining arg as a readable path.
-fn extract_file_paths_from_argv(argv: &[String]) -> Vec<PathBuf> {
-    argv.iter()
-        .skip(1)
-        .filter(|arg| !arg.starts_with('-'))
-        .map(PathBuf::from)
-        .filter(|p| validate::validate_readable_path(p).is_ok())
-        .collect()
+#[tauri::command]
+fn close_window_cancelled(window: tauri::WebviewWindow, registry: State<'_, WindowRegistryState>) {
+    registry.lock().clear_close_pending(window.label());
 }
 
-// Queue file paths for opening once the renderer is ready. If the renderer has
-// already signaled readiness, flush immediately; otherwise they wait in the
-// pending queue and are drained by the renderer_ready command.
-fn queue_or_flush_opens(app: &AppHandle, paths: Vec<PathBuf>) {
-    if paths.is_empty() {
-        return;
+#[tauri::command]
+fn broadcast_settings(
+    window: tauri::WebviewWindow,
+    settings: serde_json::Value,
+) -> Result<(), String> {
+    let bytes = serde_json::to_vec(&settings).map_err(|error| error.to_string())?;
+    if bytes.len() > MAX_SETTINGS_BYTES {
+        return Err("settings payload exceeds 16 KiB".to_string());
     }
-
-    let pending = app.state::<PendingFileOpensState>();
-
-    // Check whether renderer_ready has already fired. We use the pending
-    // queue's emptiness as a proxy is unreliable, so we track readiness
-    // explicitly via a separate state flag.
-    let renderer_ready_state = app.state::<RendererReadyState>();
-    let ready = renderer_ready_state
-        .0
-        .load(std::sync::atomic::Ordering::SeqCst);
-
-    if ready {
-        // Renderer is up: emit immediately. Push to a throwaway local queue
-        // and run the flush path.
-        let tmp = PendingFileOpensState(Mutex::new(paths));
-        if let Some(window) = app.get_webview_window("main") {
-            flush_pending_opens(app, &window, &tmp);
-        }
-    } else {
-        let mut q = pending.0.lock().unwrap();
-        q.extend(paths);
-    }
+    ipc::emit_except_window(
+        window.app_handle(),
+        window.label(),
+        "settings-changed",
+        settings,
+    );
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            // Second instance launched with file args (e.g. "app file.md").
-            let paths = extract_file_paths_from_argv(&argv);
-            queue_or_flush_opens(app, paths);
-            // Bring the existing window forward.
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let opened = session::open_argv(app, &argv, std::path::Path::new(&cwd));
+            if !opened {
+                if let Some(label) = app.state::<WindowRegistryState>().lock().menu_target() {
+                    session::focus_label(app, &label);
+                }
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .manage(ActiveFilePathsState(Mutex::new(HashSet::new())))
-        .manage(PendingFileOpensState(Mutex::new(Vec::new())))
-        .manage(RendererReadyState(std::sync::atomic::AtomicBool::new(
-            false,
-        )))
+        .manage(WindowRegistryState::new())
+        .manage(ActiveFilePathsState::new())
+        .manage(RecentFilesState::new())
         .menu(menu::build_menu)
         .on_menu_event(menu::handle_menu_event)
         .invoke_handler(tauri::generate_handler![
@@ -529,8 +317,18 @@ pub fn run() {
             save_file,
             save_file_to_path,
             close_file,
+            begin_tab_drag,
+            clear_tab_drag,
+            drop_tab_in_window,
             get_recent_files,
             open_recent_file,
+            open_new_window,
+            open_new_window_with_tab,
+            get_window_context,
+            claim_workspaces,
+            close_window_confirmed,
+            close_window_cancelled,
+            broadcast_settings,
             export::export_tabs_data
         ])
         .setup(|app| {
@@ -538,58 +336,76 @@ pub fn run() {
                 .map_err(std::io::Error::other)?;
             app.manage(sync);
 
-            // Seed the pending queue with argv file paths (CLI launch, e.g.
-            // `sainte-devote note.md`). Flushed once the renderer signals ready.
             let argv: Vec<String> = std::env::args().collect();
-            let paths = extract_file_paths_from_argv(&argv);
+            let cwd = session::current_dir();
+            let paths = session::resolve_argv_paths(&argv, &cwd);
             if !paths.is_empty() {
-                let pending = app.state::<PendingFileOpensState>();
-                let mut q = pending.0.lock().unwrap();
-                q.extend(paths);
+                let registry = app.state::<WindowRegistryState>();
+                let mut registry = registry.lock();
+                for path in paths {
+                    registry.route_open(path, window_registry::MAIN_LABEL, true);
+                }
             }
 
-            // Overlay title bars are macOS-only. On Windows the OS caption would
-            // sit above the custom #titlebar; drop decorations and let the
-            // renderer draw window controls instead.
             #[cfg(windows)]
             for window in app.webview_windows().values() {
-                if let Err(e) = window.set_decorations(false) {
-                    eprintln!("failed to disable window decorations: {e}");
+                if let Err(error) = window.set_decorations(false) {
+                    eprintln!("failed to disable window decorations: {error}");
                 }
             }
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            match event {
-                WindowEvent::ThemeChanged(theme) => {
-                    let is_dark = matches!(theme, tauri::Theme::Dark);
-                    if let Err(e) = window.emit("theme-changed", is_dark) {
-                        eprintln!("failed to emit theme-changed: {e}");
-                    }
-                }
-                WindowEvent::Focused(true) => {
-                    window
-                        .app_handle()
-                        .state::<file_sync::ExternalFileSyncState>()
-                        .recheck_all();
-                }
-                WindowEvent::Destroyed if window.label() == "main" => {
-                    window
-                        .app_handle()
-                        .state::<file_sync::ExternalFileSyncState>()
-                        .stop_all();
-                }
-                // Drag-and-drop arrives as a WindowEvent variant in tauri 2.11
-                // (the older Builder::on_drag_drop_event API was removed). This
-                // mirrors main.js openFileInRenderer(grantWriteAccess: true):
-                // drag-drop is a user file-selection gesture, so it grants write
-                // access and opens the files read-write.
-                WindowEvent::DragDrop(drag_event) => {
-                    handle_drag_drop(window, drag_event);
-                }
-                _ => {}
+        .on_window_event(|window, event| match event {
+            WindowEvent::ThemeChanged(theme) => {
+                let is_dark = matches!(theme, tauri::Theme::Dark);
+                ipc::emit_to_window(
+                    window.app_handle(),
+                    window.label(),
+                    "theme-changed",
+                    is_dark,
+                );
             }
+            WindowEvent::Focused(true) => {
+                let label = window.label().to_string();
+                window
+                    .app_handle()
+                    .state::<WindowRegistryState>()
+                    .lock()
+                    .note_focus(&label);
+                window
+                    .app_handle()
+                    .state::<file_sync::ExternalFileSyncState>()
+                    .recheck_all();
+            }
+            WindowEvent::CloseRequested { api, .. } => {
+                let label = window.label().to_string();
+                let outcome = window
+                    .app_handle()
+                    .state::<WindowRegistryState>()
+                    .lock()
+                    .on_close_requested(&label);
+                if outcome == window_registry::CloseRequestOutcome::PreventAndAsk {
+                    api.prevent_close();
+                    ipc::emit_to_window(window.app_handle(), &label, "window-close-requested", ());
+                }
+            }
+            WindowEvent::Destroyed => {
+                let label = window.label().to_string();
+                let app = window.app_handle();
+                app.state::<WindowRegistryState>()
+                    .lock()
+                    .destroy_window(&label);
+                app.state::<ActiveFilePathsState>().revoke_window(&label);
+                app.state::<file_sync::ExternalFileSyncState>()
+                    .unwatch_window(&label);
+            }
+            WindowEvent::DragDrop(drag_event) => {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    session::handle_drag_drop(&webview, drag_event);
+                }
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -600,17 +416,13 @@ pub fn run() {
                     .shutdown();
             }
 
-            // macOS file association: opening a .md from Finder delivers the
-            // path(s) as file:// URLs here. Mirrors Electron's 'open-file'.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
-                let paths: Vec<PathBuf> = urls
+                let paths: Vec<std::path::PathBuf> = urls
                     .iter()
-                    .filter_map(|u| u.to_file_path().ok())
-                    .filter(|p| validate::validate_readable_path(p).is_ok())
+                    .filter_map(|url| url.to_file_path().ok())
                     .collect();
-                queue_or_flush_opens(app_handle, paths);
+                session::open_user_paths(app_handle, &paths);
             }
-            let _ = app_handle;
         });
 }

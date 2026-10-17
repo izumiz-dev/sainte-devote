@@ -21,6 +21,7 @@ https://github.com/user-attachments/assets/34639bbc-92eb-42c4-9830-76229d2f9e92
     -   Draggable tab reordering.
     -   Inline tab renaming.
     -   Automatic saving using IndexedDB.
+    -   Drag a tab out of the window to detach it into a new window, or drop it on another Sainte Devote window to move it there. Releasing outside all windows creates a new window for the tab.
 -   **UI**:
     -   Horizontal scrolling for the tab bar.
     -   Context menu for tab operations.
@@ -73,10 +74,16 @@ the archive as a backup. Files already saved as `.md`, `.markdown`, or `.txt`
 are not affected by the application build process.
 
 The unbundled `pnpm tauri:dev` application and an installed macOS `.app` also
-use separate WebKit data directories. Export dev scratch tabs before switching
-to an installed build. Replacing an installed build with another build that
-keeps the same `dev.izumiz.sainte-devote` identifier preserves the installed
-build's data; changing the identifier creates a different data store.
+use separate WebKit data directories. **Export All Tabs** exports the current
+window only, so export each window before switching to an installed build.
+Replacing an installed build with another build that keeps the same
+`dev.izumiz.sainte-devote` identifier preserves the installed build's data;
+changing the identifier creates a different data store.
+
+Scratch tabs are copied into a new database named `SainteDevoteWorkspaces` on
+upgrade, and the previous database is left in place. Export each window before
+upgrading. An older 2.0.x build can still show the scratch tabs from before
+that upgrade; tabs created after it stay in the new database.
 
 ## Configuration
 

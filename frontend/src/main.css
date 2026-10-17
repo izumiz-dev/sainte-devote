@@ -334,6 +334,36 @@ body.tabs-hidden #preview {
   scroll-behavior: auto;
   -webkit-app-region: no-drag;
   z-index: 20;
+  position: relative;
+}
+
+/*
+ * Insertion indicator shown while a tab is being dragged inside the window.
+ * It marks the exact boundary where the tab will land, which the moving tab
+ * alone does not convey clearly (the OS drag image follows the pointer and
+ * covers the target slot).
+ */
+.tab-drop-marker {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: #2563eb;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+  display: none;
+  z-index: 30;
+}
+
+#tabs.tab-drag-active .tab-drop-marker {
+  display: block;
+}
+
+.dark-theme .tab-drop-marker {
+  background: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
 }
 
 #tabs::-webkit-scrollbar {
@@ -575,28 +605,18 @@ body.tabs-hidden #tabs {
   outline: none;
 }
 
+/*
+ * While dragging, the tab stays in the flow as a dimmed placeholder: the
+ * accent-coloured .tab-drop-marker bar carries the "it will land here" signal,
+ * so the lifted-card look (which the OS drag image made hard to read) is gone.
+ */
 .tab.dragging {
-  opacity: 1;
-  border-radius: 7px;
-  box-shadow:
-    0 8px 20px rgba(0, 0, 0, 0.18),
-    0 2px 6px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
+  opacity: 0.4;
   cursor: grabbing;
-  background: #ffffff;
-  color: #111827;
 }
 
 .tab.dragging::before {
   opacity: 0;
-}
-
-.dark-theme .tab.dragging {
-  box-shadow:
-    0 8px 20px rgba(0, 0, 0, 0.45),
-    0 2px 6px rgba(0, 0, 0, 0.3);
-  background: #2a2a2a;
-  color: #f3f4f6;
 }
 
 #editor-container {

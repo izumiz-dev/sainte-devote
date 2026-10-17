@@ -137,6 +137,14 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   };
   const tabData = {};
   let draggedTab = null;
+  // Tab id of the drag that started in THIS window. Kept set after dragend so
+  // a drag released outside the window can still be resolved (a native drop
+  // outside the webview never fires dragend in some engines, so the backend
+  // reports it instead).
+  let draggedTabId = null;
+  // Pending "spawn a new window" decision, pending confirmation that no other
+  // window claimed the dragged tab.
+  let detachTimer = null;
   const markdownCache = {};
 
   const initializedEditors = new Set();
@@ -154,143 +162,54 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   // setValue(), so the reload itself isn't mistaken for a user edit.
   let isApplyingExternalContent = false;
   const pendingFileOpens = [];
+  // Tabs handed over from another window (drag-out spawns a new window), held
+  // here until this window's own tabs finish initializing.
+  const pendingTabOpens = [];
+  // Private drag payload type. Deliberately not text/plain — see dragstart.
+  const TAB_DRAG_MIME = 'application/x-sainte-devote-tab';
+  // Oriented by dragenter/dragleave, not by dragend's coordinates: when a drag
+  // is released outside the window, dragend fires with clientX/clientY of
+  // 0,0 on Chromium-family engines (WebView2), which reads as "inside" the
+  // viewport and would swallow the detach.
+  let dragLeftWindow = false;
+  // Where the dragged tab sat when the drag started, so a preview that wandered
+  // off the tab bar can be rolled back.
+  let draggedTabOrigin = null;
 
-  const dbName = 'SainteDevoteDB';
-  let db;
-  let dbReadyPromise = null;
+  let db = null;
+  let currentWorkspaceId = null;
   let initPromise = null;
+  let applyingRemoteSettings = false;
 
-  function openDatabase() {
-    return new Promise((resolve, reject) => {
-      const request = window.indexedDB.open(dbName, 1);
-
-      request.onupgradeneeded = (event) => {
-        db = event.target.result;
-        if (!db.objectStoreNames.contains('tabs')) {
-          db.createObjectStore('tabs', { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains('content')) {
-          db.createObjectStore('content', { keyPath: 'tabId' });
-        }
-      };
-
-      request.onsuccess = (event) => {
-        db = event.target.result;
-        resolve();
-      };
-
-      request.onerror = (event) => {
-        reject('Database error: ' + event.target.errorCode);
-      };
-    });
-  }
-
-  function ensureDatabase() {
-    if (!dbReadyPromise) {
-      dbReadyPromise = openDatabase().catch((err) => {
-        dbReadyPromise = null;
-        throw err;
-      });
-    }
-    return dbReadyPromise;
+  function scratchTabsForStore() {
+    return Object.entries(tabData)
+      .filter(([, tab]) => !tab.filePath)
+      .map(([id, tab]) => ({
+        id: Number(id),
+        title: tab.title,
+        order: tab.order || 0,
+        origin: tab.origin || null,
+      }));
   }
 
   function saveTabDataIndexedDB() {
-    if (!db) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['tabs'], 'readwrite');
-      const store = transaction.objectStore('tabs');
-
-      store.clear().onsuccess = () => {
-        Object.entries(tabData).forEach(([id, tab]) => {
-          if (tab.filePath) return;
-          store.put({
-            id: Number(id),
-            title: tab.title,
-            content: tab.content || '',
-            order: tab.order || 0,
-          });
-        });
-      };
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject('Transaction error');
-    });
-  }
-
-  function loadTabDataIndexedDB() {
-    if (!db) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['tabs'], 'readonly');
-      const store = transaction.objectStore('tabs');
-      const request = store.getAll();
-
-      request.onsuccess = (event) => {
-        const tabs = event.target.result;
-        tabs.forEach((tab) => {
-          tabData[tab.id] = {
-            title: tab.title,
-            content: tab.content || '',
-            order: tab.order || 0,
-          };
-        });
-        resolve();
-      };
-
-      request.onerror = () => reject('Load error');
-    });
+    if (!db || !currentWorkspaceId) return Promise.resolve();
+    return workspaceStore.saveScratchMeta(db, currentWorkspaceId, scratchTabsForStore());
   }
 
   function saveEditorContentIndexedDB(tabId, content) {
-    if (!db) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['content'], 'readwrite');
-      const store = transaction.objectStore('content');
-      store.put({ tabId, content });
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject('Transaction error');
-    });
+    if (!db || !currentWorkspaceId) return Promise.resolve();
+    return workspaceStore.saveContent(db, currentWorkspaceId, tabId, content);
   }
 
   function loadEditorContentIndexedDB(tabId) {
-    if (!db) return Promise.resolve('');
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['content'], 'readonly');
-      const store = transaction.objectStore('content');
-      const request = store.get(tabId);
-
-      request.onsuccess = (event) => {
-        const result = event.target.result;
-        resolve(result ? result.content : '');
-      };
-
-      request.onerror = () => reject('Load error');
-    });
+    if (!db || !currentWorkspaceId) return Promise.resolve('');
+    return workspaceStore.loadContent(db, currentWorkspaceId, tabId);
   }
 
-  function deleteTabDataIndexedDB(tabId) {
-    if (!db) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['tabs'], 'readwrite');
-      const store = transaction.objectStore('tabs');
-      store.delete(Number(tabId));
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject('Delete tab data error');
-    });
-  }
-
-  function deleteEditorContentIndexedDB(tabId) {
-    if (!db) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['content'], 'readwrite');
-      const store = transaction.objectStore('content');
-      store.delete(Number(tabId));
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject('Delete content error');
-    });
+  function deleteScratchTabIndexedDB(tabId) {
+    if (!db || !currentWorkspaceId) return Promise.resolve();
+    return workspaceStore.deleteTab(db, currentWorkspaceId, tabId);
   }
 
   function getFileNameFromPath(filePath) {
@@ -345,6 +264,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   async function bindTabToFile(tabId, filePath) {
+    const previousPath = tabData[tabId]?.filePath;
+    if (previousPath && previousPath !== filePath) {
+      window.electron.send('close-file', previousPath);
+    }
     const fileName = getFileNameFromPath(filePath);
     tabData[tabId].filePath = filePath;
     tabData[tabId].readOnly = false;
@@ -357,10 +280,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       tabEl.classList.remove('tab-readonly');
       tabEl.removeAttribute('title');
     }
-    await Promise.all([
-      deleteTabDataIndexedDB(tabId),
-      deleteEditorContentIndexedDB(tabId),
-    ]);
+    await deleteScratchTabIndexedDB(tabId);
     await saveTabData();
     updateWindowTitle();
   }
@@ -399,12 +319,27 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
+  function clearTabReadOnly(tabId) {
+    const tab = tabData[tabId];
+    if (!tab) return;
+    tab.readOnly = false;
+    const tabEl = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (tabEl) {
+      tabEl.classList.remove('tab-readonly');
+      tabEl.removeAttribute('title');
+    }
+  }
+
   function openFileFromPath(filePath, content, readOnly = false) {
     const existing = findTabByFilePath(filePath);
     if (existing !== null) {
       // Reopening an already-open file (dialog, drag-drop, recent list, or a
       // second `open` on the same path) — treat the fresh disk read as a
-      // sync instead of just switching tabs and discarding it.
+      // sync instead of just switching tabs and discarding it. A writable
+      // reopen also clears a previous read-only recent open.
+      if (!readOnly) {
+        clearTabReadOnly(existing);
+      }
       handleExternalFileContent(existing, content);
       switchTab(existing);
       return;
@@ -493,11 +428,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   }
 
-  function saveAsCurrentTab(tabId = currentTab) {
+  async function saveAsCurrentTab(tabId = currentTab) {
     if (!tabId) return;
     pendingSaveAsTabId = tabId;
     const content = editors[tabId]?.getValue() || '';
-    const tabTitle = tabData[tabId]?.title || `Untitled ${getDisplayTabNumber(tabId)}`;
+    const tabTitle = tabData[tabId]?.title || (await nextUntitledTitle(tabId));
     const fileName = tabData[tabId]?.filePath
       ? getFileNameFromPath(tabData[tabId].filePath)
       : `${tabTitle}.md`;
@@ -589,6 +524,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     return index >= 0 ? index + 1 : orderedTabs.length + 1;
   }
 
+  // Globally-unique "Untitled N" title across all windows. Falls back to the
+  // per-window position when IndexedDB is unavailable.
+  async function nextUntitledTitle(tabId) {
+    if (db) {
+      try {
+        return `Untitled ${await workspaceStore.nextUntitledNumber(db)}`;
+      } catch {
+        // fall through to the position-based fallback
+      }
+    }
+    return `Untitled ${getDisplayTabNumber(tabId)}`;
+  }
+
   function getTabsByOrder() {
     return Object.entries(tabData)
       .map(([id, data]) => ({ id: Number(id), ...data }))
@@ -648,12 +596,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  function addTab(tabId = null, title = null, content = null, filePath = null, readOnly = false) {
+  async function addTab(tabId = null, title = null, content = null, filePath = null, readOnly = false) {
     if (tabId !== null) {
       tabId = Number(tabId);
       if (isNaN(tabId)) tabId = getNextAvailableTabId();
     } else {
       tabId = getNextAvailableTabId();
+    }
+
+    // Default scratch-tab titles use a counter that is global to all windows
+    // (stored in IndexedDB meta), so "Untitled N" is unique across windows.
+    if (!title) {
+      title = await nextUntitledTitle(tabId);
     }
 
     const currentOrder = Object.keys(tabData).length;
@@ -718,6 +672,40 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         scrollToActiveTab(newTabElement);
       }
     }, 0);
+
+    return tabId;
+  }
+
+  // Receive a scratch tab handed over from another window. Its editor content
+  // normally comes from this window's IndexedDB (per-window workspace), which
+  // is empty in a freshly created window, so seed the editor from the payload.
+  // File-backed transfers never arrive here: the backend routes them through
+  // open_one so validation, grants and watchers apply ('file-opened').
+  async function adoptTransferredTab({ title, content, origin }) {
+    const tabId = await addTab(null, title || '', content || '');
+    if (origin && tabData[tabId]) {
+      // Remember where this tab comes from: if the app exits before the
+      // source window drops its copy, the next startup's absorb step uses
+      // this record to skip the orphan instead of resurrecting a duplicate.
+      tabData[tabId].origin = {
+        workspace: String(origin.workspace || ''),
+        tab: Number(origin.tab),
+      };
+      await saveTabData();
+    }
+    if (!content) return;
+
+    const seed = () => {
+      const editor = editors[tabId];
+      if (editor && editor.getValue() !== content) {
+        editor.setValue(content);
+      }
+    };
+    if (editors[tabId]) {
+      seed();
+    } else {
+      setTimeout(seed, 0);
+    }
   }
 
   function switchTab(tabId) {
@@ -838,17 +826,36 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-      await ensureDatabase();
+      const context = await window.electron.invoke('get-window-context');
+      const boot = await workspaceStore.bootstrap({
+        role: context.role,
+        workspaceId: context.workspaceId,
+        claim: (ids) => window.electron.invoke('claim-workspaces', { ids }),
+      });
+      db = boot.db;
+      currentWorkspaceId = boot.workspaceId;
       clearPrematureTabs();
-      await loadTabDataIndexedDB();
-      if (Object.keys(tabData).length > 0) {
-        const orderedTabs = getTabsByOrder();
-        for (const tab of orderedTabs) {
-          const content = await loadEditorContentIndexedDB(tab.id);
-          addTab(tab.id, tab.title, content);
+      const hasPendingOpens = pendingFileOpens.length > 0 || pendingTabOpens.length > 0;
+      if (boot.tabs.length > 0) {
+        for (const tab of boot.tabs) {
+          // Serial awaits keep the restore order identical to the saved one;
+          // addTab resolves its title asynchronously, so a fire-and-forget
+          // loop could rattle "Untitled N" numbering.
+          await addTab(tab.id, tab.title, tab.content);
+          if (tab.origin) {
+            tabData[tab.id].origin = tab.origin;
+          }
         }
-      } else if (pendingFileOpens.length === 0) {
-        addTab();
+        await saveTabData();
+      } else if (!hasPendingOpens) {
+        await addTab();
+      }
+      while (pendingTabOpens.length > 0) {
+        const pending = [...pendingTabOpens];
+        pendingTabOpens.length = 0;
+        for (const tab of pending) {
+          await adoptTransferredTab(tab);
+        }
       }
       while (pendingFileOpens.length > 0) {
         const pending = [...pendingFileOpens];
@@ -872,12 +879,17 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   async function saveTabData() {
-    await ensureDatabase();
     await saveTabDataIndexedDB();
   }
 
   const tabs = document.getElementById('tabs');
   const addTabBtn = document.querySelector('.add-tab-btn');
+  // Insertion indicator for tab drags inside the window. It lives inside #tabs
+  // (positioned relative) so it scrolls with the tab strip.
+  const dropMarker = document.createElement('div');
+  dropMarker.className = 'tab-drop-marker';
+  dropMarker.setAttribute('aria-hidden', 'true');
+  tabs.appendChild(dropMarker);
   const previewContainer = document.getElementById('preview');
   const modeToggleBtn = document.getElementById('mode-toggle-btn');
   let activeTabElement = document.querySelector('.tab.active');
@@ -953,6 +965,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         text: 'Save as Markdown',
         icon: '💾',
         action: () => saveAsMarkdown(tabId)
+      },
+      {
+        text: 'Open in New Window',
+        icon: '🪟',
+        action: async () => {
+          // Unlike a drag, this is an explicit request: keep this window alive
+          // even when the moved tab was its only one.
+          if (!(await transferTabToNewWindow(tabId))) return;
+          await closeTab(tabId, { skipConfirm: true });
+        }
       }
     ];
 
@@ -1123,7 +1145,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const tab = event.target.closest('.tab');
     if (tab && tab.dataset.tab) {
       event.preventDefault();
-      createContextMenu(event.clientX, event.clientY, tab.dataset.tab);
+      createContextMenu(event.clientX, event.clientY, Number(tab.dataset.tab));
     }
   });
 
@@ -1159,7 +1181,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       addTab();
     }
 
-    if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'w') {
       event.preventDefault();
       if (currentTab) {
         closeTab(currentTab);
@@ -1207,21 +1229,252 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   });
 
   tabs.addEventListener('dragstart', (event) => {
-    if (event.target.classList.contains('tab') && event.target.dataset.tab) {
-      draggedTab = event.target;
-      event.target.classList.add('dragging');
+    // event.target is the deepest element under the pointer — usually the
+    // title <span> inside the button, not the button itself. Resolve the
+    // owning tab via closest() so dragging works from anywhere on the tab
+    // except the close button.
+    const target = event.target;
+    const tab = target && target.closest ? target.closest('.tab') : null;
+    if (tab && tab.dataset.tab && !(target.closest && target.closest('.close-tab-btn'))) {
+      const tabId = Number(tab.dataset.tab);
+      draggedTab = tab;
+      draggedTabId = tabId;
+      tab.classList.add('dragging');
       event.dataTransfer.effectAllowed = 'move';
+      // Use a private MIME type, never text/plain: macOS would treat a text
+      // payload as droppable text and offer to write a file to the Desktop
+      // (the "+" cursor and the stray file on drop). A type the OS cannot
+      // materialize makes external drops a no-op instead.
+      event.dataTransfer.setData(TAB_DRAG_MIME, tab.dataset.tab);
+      dragLeftWindow = false;
+      draggedTabOrigin = { parent: tab.parentNode, next: tab.nextSibling };
+      registerTabDrag(tabId);
     }
   });
 
+  // Hand the dragged tab's payload to the backend so whichever window receives
+  // the native drop can pick it up (merge), and so a stale payload never
+  // lingers when the drag ends inside this window.
+  function registerTabDrag(tabId) {
+    const tab = tabData[tabId];
+    if (!tab) return;
+    window.electron.send('begin-tab-drag', {
+      // Echoed back on tab-drag-consumed / tab-dropped-outside so the right
+      // tab is removed even when local drag state was cleared by a racing
+      // dragend.
+      tabId,
+      originWorkspaceId: currentWorkspaceId,
+      title: tab.title || `Untitled ${getDisplayTabNumber(tabId)}`,
+      content: editors[tabId]?.getValue() ?? tab.content ?? '',
+      filePath: tab.filePath || null,
+    });
+  }
+
   tabs.addEventListener('dragend', (event) => {
-    if (event.target.classList.contains('tab')) {
-      event.target.classList.remove('dragging');
+    const target = event.target;
+    const tab = target && target.closest ? target.closest('.tab') : null;
+    if (tab) {
+      tab.classList.remove('dragging');
       draggedTab = null;
       updateTabOrder();
     }
+
+    // A native drop inside this window was committed already (reorder handled by
+    // 'tab-dropped-in-window'); anything still pending here means the release
+    // never reached a window — the desktop or another app — so detach.
+    //
+    // dragend coordinates are reliable on WebKit (they match the native drop
+    // position exactly). On Chromium-family engines an out-of-window release
+    // reports (0,0), so combine the viewport check with the dragleave
+    // tracker for that case.
+    const coordsInconclusive = event.clientX === 0 && event.clientY === 0;
+    const droppedOutside =
+      draggedTabId !== null &&
+      (isOutsideViewport(event.clientX, event.clientY) ||
+        (coordsInconclusive && dragLeftWindow));
+    if (droppedOutside) {
+      // Released beyond the window: wait briefly to see whether another
+      // window claims the tab before spawning a new one.
+      scheduleDetach();
+    } else {
+      // Ended inside this window — a reorder or a cancel. The tab stays put;
+      // just drop the backend registration so a later drop can't claim it.
+      window.electron.send('clear-tab-drag');
+      clearDragState();
+    }
   });
 
+  function isOutsideViewport(x, y) {
+    return x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight;
+  }
+
+  function isFileDrag(event) {
+    return Boolean(event.dataTransfer && [...event.dataTransfer.types].includes('Files'));
+  }
+
+  // Put the dragged tab back at the position it had when the drag started.
+  function resetDraggedTabPosition() {
+    if (!draggedTab || !draggedTabOrigin) return;
+    if (!draggedTabOrigin.parent) return;
+    if (draggedTabOrigin.next && draggedTabOrigin.next.parentNode === draggedTabOrigin.parent) {
+      draggedTabOrigin.parent.insertBefore(draggedTab, draggedTabOrigin.next);
+    } else {
+      draggedTabOrigin.parent.appendChild(draggedTab);
+    }
+    positionDropMarker();
+  }
+
+  // Keep the insertion bar aligned with the leading edge of the dragged tab.
+  function positionDropMarker() {
+    if (!draggedTab) return;
+    const containerRect = tabs.getBoundingClientRect();
+    const rect = draggedTab.getBoundingClientRect();
+    dropMarker.style.left = `${rect.left - containerRect.left + tabs.scrollLeft}px`;
+  }
+
+  function setDragMarkerVisible(visible) {
+    tabs.classList.toggle('tab-drag-active', Boolean(visible));
+  }
+
+  // Insertion indicator helper shared by the native drag stream (macOS / all
+  // platforms) and the in-page dragover path (Chromium-based webviews).
+
+  // Reset the drag bookkeeping and visuals without touching the tab itself.
+  // dragend may not have fired when the release happened outside the webview,
+  // so callers that resolve the drag themselves use this too.
+  function clearDragState() {
+    cancelScheduledDetach();
+    draggedTabId = null;
+    setDragMarkerVisible(false);
+    if (draggedTab) {
+      draggedTab.classList.remove('dragging');
+      draggedTab = null;
+      updateTabOrder();
+    }
+    draggedTabOrigin = null;
+  }
+
+  // A release beyond the window is ambiguous: it may have landed on another
+  // Sainte Devote window (which merges and answers with 'tab-drag-consumed')
+  // or on the desktop / another app (which merges nowhere). Give the backend
+  // a moment to answer before spawning a new window.
+  function scheduleDetach(tabId) {
+    cancelScheduledDetach();
+    const id = Number.isFinite(tabId) ? tabId : draggedTabId;
+    detachTimer = setTimeout(() => {
+      detachTimer = null;
+      detachDraggedTab(id);
+    }, 250);
+  }
+
+  function cancelScheduledDetach() {
+    if (detachTimer !== null) {
+      clearTimeout(detachTimer);
+      detachTimer = null;
+    }
+  }
+
+  // Hand `tabId` to a brand-new window through the backend. Returns true when the
+  // new window owns it, so the caller can drop its own copy. Shared by the
+  // out-of-window drag fallback and the tab context menu.
+  async function transferTabToNewWindow(rawTabId) {
+    // Tab ids come from dataset (strings) in some call paths; the command
+    // argument must be an integer.
+    const tabId = Number(rawTabId);
+    if (!Number.isFinite(tabId)) return false;
+    const tab = tabData[tabId];
+    if (!tab) return false;
+    const content = editors[tabId]?.getValue() ?? tab.content ?? '';
+    window.electron.send('clear-tab-drag');
+    try {
+      await window.electron.invoke('open-new-window-with-tab', {
+        tabId,
+        originWorkspaceId: currentWorkspaceId,
+        tabTitle: tab.title || (await nextUntitledTitle(tabId)),
+        tabContent: content,
+        filePath: tab.filePath || null,
+      });
+    } catch (error) {
+      if (/already merged/i.test(String(error))) {
+        // The release actually merged the tab into another window while this
+        // fallback was pending; its tab-drag-consumed removes the tab here.
+        return false;
+      }
+      console.error('Failed to open the tab in a new window:', error);
+      showNotification(`Failed to open tab in a new window: ${error}`, 'error');
+      return false;
+    }
+    return true;
+  }
+
+  // Move the dragged tab into a brand-new window and drop it from this one.
+  // `tabId` comes from the caller (the timer, or the backend's self-drop
+  // report) rather than live drag state, so a late notification always names
+  // the right tab.
+  async function detachDraggedTab(tabId) {
+    cancelScheduledDetach();
+    let id = draggedTabId;
+    if (tabId !== null && tabId !== undefined && Number.isFinite(Number(tabId))) {
+      id = Number(tabId);
+    }
+    if (id === null) return;
+    // Always drop the drag state, even when there is nothing left to detach:
+    // a released-outside drag must not leave draggedTabId set for later
+    // events to misread.
+    clearDragState();
+    if (!tabData[id]) return;
+    if (!(await transferTabToNewWindow(id))) return;
+    await removeTransferredTab(id);
+  }
+
+  // Another window merged the tab: it already lives there, so just drop ours.
+  // The echoed tab id comes from the backend (registered at dragstart), so
+  // this works even after local drag state was cleared by dragend.
+  async function onTabDragConsumed(tabId) {
+    cancelScheduledDetach();
+    let id = draggedTabId;
+    if (tabId !== null && Number.isFinite(tabId)) {
+      id = tabId;
+    }
+    clearDragState();
+    await removeTransferredTab(id);
+  }
+
+  // The backend echoes the source tab id that travelled with the drag
+  // payload. Accept the bare number Rust emits and the { tabId } object.
+  function normalizeTabDragEcho(payload) {
+    if (typeof payload === 'number' && Number.isFinite(payload)) return payload;
+    const tabId = payload?.tabId;
+    return tabId !== undefined && Number.isFinite(Number(tabId)) ? Number(tabId) : null;
+  }
+
+  // Remove a tab that now lives in another window. A transferred scratch tab is
+  // not "deleted", so skip the confirmation; and if it was the only tab left,
+  // this window has nothing to show, so close it.
+  async function removeTransferredTab(tabId) {
+    if (tabId === null || tabId === undefined || !tabData[tabId]) return;
+    await closeTab(tabId, { skipConfirm: true, allowEmpty: true });
+    if (Object.keys(tabData).length === 0) {
+      await discardWorkspaceAndCloseWindow();
+    }
+  }
+
+  // Drop this window's scratch workspace, then destroy the window without the
+  // "scratch tabs will be deleted" prompt (there are none left).
+  async function discardWorkspaceAndCloseWindow() {
+    try {
+      if (db && currentWorkspaceId) {
+        await workspaceStore.deleteWorkspace(db, currentWorkspaceId);
+      }
+    } catch (error) {
+      console.error('Failed to clear scratch workspace:', error);
+    }
+    window.electron.send('close-window-confirmed');
+  }
+
+  // In-page dragover path. WebKit never delivers it (the drag is promoted to a
+  // native session and driven from Rust instead), but Chromium-based webviews
+  // such as WebView2 do, so keep it working there as well.
   tabs.addEventListener('dragover', (event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -1232,6 +1485,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     } else if (draggedTab && afterElement) {
       tabs.insertBefore(draggedTab, afterElement);
     }
+    positionDropMarker();
+    setDragMarkerVisible(Boolean(draggedTab));
   });
 
   function getDragAfterElement(container, x) {
@@ -1264,8 +1519,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     tab.replaceChild(input, span);
 
-    input.addEventListener('blur', () => {
-      const newTitle = input.value || `Untitled ${getDisplayTabNumber(tabId)}`;
+    input.addEventListener('blur', async () => {
+      const newTitle = input.value || (await nextUntitledTitle(tabId));
       span.textContent = newTitle;
       if (tab.contains(input)) {
         tab.replaceChild(span, input);
@@ -1424,16 +1679,47 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     });
   }
 
-  async function closeTab(tabId) {
+  let windowCloseInFlight = false;
+  async function handleWindowCloseRequested() {
+    if (windowCloseInFlight) return;
+    windowCloseInFlight = true;
+    try {
+      const doomed = Object.entries(tabData).filter(([id, tab]) => {
+        if (tab.filePath) return false;
+        const content = editors[id]?.getValue() ?? tab.content ?? '';
+        return content.trim().length > 0;
+      });
+      if (doomed.length > 0) {
+        const confirmed = await showConfirmDialog(
+          `Closing this window will permanently delete ${doomed.length} scratch tab${doomed.length === 1 ? '' : 's'}.`,
+        );
+        if (!confirmed) {
+          window.electron.send('close-window-cancelled');
+          return;
+        }
+      }
+      if (db && currentWorkspaceId) {
+        await workspaceStore.deleteWorkspace(db, currentWorkspaceId);
+      }
+      window.electron.send('close-window-confirmed');
+    } catch (error) {
+      console.error('Failed to close window:', error);
+      window.electron.send('close-window-cancelled');
+    } finally {
+      windowCloseInFlight = false;
+    }
+  }
+
+  async function closeTab(tabId, options = {}) {
     tabId = Number(tabId);
 
     const tab = tabData[tabId];
     if (!tab) return;
 
     const isScratchTab = !tab.filePath;
-    const tabTitle = tab.title || `Untitled ${getDisplayTabNumber(tabId)}`;
+    const tabTitle = tab.title || (await nextUntitledTitle(tabId));
 
-    if (isScratchTab) {
+    if (isScratchTab && !options.skipConfirm) {
       const content = editors[tabId]?.getValue() ?? tab.content ?? '';
       if (content.trim().length > 0) {
         const confirmed = await showConfirmDialog(
@@ -1463,10 +1749,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     if (isScratchTab) {
       try {
-        await Promise.all([
-          deleteTabDataIndexedDB(tabId),
-          deleteEditorContentIndexedDB(tabId),
-        ]);
+        await deleteScratchTabIndexedDB(tabId);
         await saveTabData();
       } catch (error) {
         console.error('Error deleting data from IndexedDB:', error);
@@ -1491,7 +1774,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           document.querySelectorAll('.editor').forEach((editor) => {
             editor.style.display = 'none';
           });
-          addTab();
+          // A window normally always keeps one tab. When the last tab moved
+          // to another window, allow the window to end up empty so the caller
+          // can close it. Await the replacement so updateWindowTitle below
+          // sees the new tab's title instead of a stale count.
+          if (!options.allowEmpty) {
+            await addTab();
+          }
         }
       }
     }
@@ -1552,6 +1841,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(userSettings));
     } catch (e) {
       console.error('Failed to save settings:', e);
+    }
+    if (!applyingRemoteSettings) {
+      window.electron.send('broadcast-settings', { settings: userSettings });
     }
   }
 
@@ -1746,6 +2038,21 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
+  window.electron.receive('settings-changed', (settings) => {
+    applyingRemoteSettings = true;
+    userSettings = { ...defaultSettings, ...settings };
+    saveSettings();
+    applyTheme();
+    applyEditorFont();
+    applyPreviewFont();
+    syncSettingsForm();
+    applyingRemoteSettings = false;
+  });
+
+  window.electron.receive('window-close-requested', () => {
+    handleWindowCloseRequested();
+  });
+
   window.electron.receive('monaco-settings', (settings) => {
     if (!monacoSettings) {
       monacoSettings = settings;
@@ -1769,6 +2076,70 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       pendingFileOpens.push({ filePath, content, readOnly });
     } else {
       openFileFromPath(filePath, content, readOnly);
+    }
+  });
+
+  // A tab drag that started here but was released outside the webview never
+  // fires dragend, so the backend reports the native drop instead. Rust only
+  // emits this when the drag came back to its own window, which means detach.
+  window.electron.receive('tab-drag-over', ({ x, y }) => {
+    if (draggedTabId === null || !draggedTab) return;
+    const rect = tabs.getBoundingClientRect();
+    if (y < rect.top - 8 || y > rect.bottom + 8) {
+      // Pointer left the tab bar: put the tab back where the drag started so
+      // dropping outside the bar does not leave a misleading preview.
+      resetDraggedTabPosition();
+      setDragMarkerVisible(false);
+      return;
+    }
+    const afterElement = getDragAfterElement(tabs, x);
+    if (afterElement == null) {
+      tabs.insertBefore(draggedTab, addTabBtn);
+    } else {
+      tabs.insertBefore(draggedTab, afterElement);
+    }
+    positionDropMarker();
+    setDragMarkerVisible(true);
+  });
+
+  window.electron.receive('tab-dropped-in-window', ({ tabId, y }) => {
+    cancelScheduledDetach();
+    window.electron.send('clear-tab-drag');
+    const rect = tabs.getBoundingClientRect();
+    if (draggedTabId !== null && Number.isFinite(Number(tabId)) && Number(tabId) === draggedTabId) {
+      if (y >= rect.top - 8 && y <= rect.bottom + 8) {
+        // Released over the tab bar: commit the new order.
+        if (draggedTab) draggedTab.classList.remove('dragging');
+        clearDragState();
+        return;
+      }
+      // Released elsewhere in this window: leave the tab where it was.
+      if (draggedTab) draggedTab.classList.remove('dragging');
+      draggedTab = null;
+    }
+    draggedTabId = null;
+  });
+
+  // Another window merged the tab we dragged: it now lives there, so drop it
+  // from this one (and cancel any pending detach).
+  window.electron.receive('tab-drag-consumed', (payload) => {
+    const tabId = normalizeTabDragEcho(payload);
+    if (draggedTabId !== null || tabId !== null) {
+      onTabDragConsumed(tabId);
+    }
+  });
+
+  // A tab handed over from another window, delivered once this renderer is up.
+  window.electron.receive('open-tab', (payload) => {
+    const tab = {
+      title: payload?.title ?? '',
+      content: payload?.content ?? '',
+      origin: payload?.origin ?? null,
+    };
+    if (!isInitialized) {
+      pendingTabOpens.push(tab);
+    } else {
+      adoptTransferredTab(tab);
     }
   });
 
@@ -1861,6 +2232,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     const staticCommands = [
       { id: 'new-tab', type: 'command', label: 'New Tab', detail: 'Create a new markdown tab', icon: icons.plus, action: () => addTab() },
+      {
+        id: 'new-window',
+        type: 'command',
+        label: 'New Window',
+        detail: 'Open a new window',
+        icon: icons.plus,
+        action: () => {
+          window.electron.invoke('open-new-window').catch((error) => {
+            console.error('Failed to open window:', error);
+            showNotification(`Failed to open window: ${error}`, 'error');
+          });
+        },
+      },
       { id: 'open-file', type: 'command', label: 'Open File', detail: 'Open a markdown file from disk', icon: icons.file, action: () => openFileDialog() },
       { id: 'save', type: 'command', label: 'Save', detail: 'Save the current tab', icon: icons.save, action: () => saveCurrentTab() },
       { id: 'save-as', type: 'command', label: 'Save As', detail: 'Save the current tab to a file', icon: icons.save, action: () => saveAsCurrentTab() },
@@ -1870,6 +2254,16 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
             setTimeout(() => closeTab(currentTab), 200);
           }
         }
+      },
+      {
+        id: 'close-window',
+        type: 'command',
+        label: 'Close Window',
+        detail: 'Close this window',
+        icon: icons.trash,
+        action: () => {
+          setTimeout(() => currentTauriWindow()?.close(), 200);
+        },
       },
       {
         id: 'delete-tab', type: 'command', label: 'Delete Tab', detail: 'Close and delete the current tab', icon: icons.trash, action: () => {
@@ -2251,14 +2645,41 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
   const dropOverlay = document.getElementById('drop-overlay');
 
+  // Ungated drag diagnostics: count every event the page actually receives.
   document.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    if (dropOverlay) dropOverlay.classList.add('visible');
+    // File drags from the OS show the drop overlay.
+    if (isFileDrag(e)) {
+      e.preventDefault();
+      if (dropOverlay) dropOverlay.classList.add('visible');
+      return;
+    }
+    // Tab drags: on WebKit this never runs (a page drag with a custom MIME
+    // type is promoted to a native session, so the page gets no dragover at
+    // all and Rust drives the preview). On Chromium-based webviews such as
+    // WebView2 the drag stays in the page, so the whole window has to be a
+    // valid drop target — including windows the drag did not start in, which is
+    // how a cross-window transfer lands there.
+    if ([...e.dataTransfer.types].includes(TAB_DRAG_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
   });
 
   document.addEventListener('dragleave', (e) => {
+    // Only engines that DO deliver in-page drag events (Chromium / WebView2)
+    // reach this; on WebKit the flag stays false and dragend's coordinates
+    // decide instead.
+    if (draggedTabId !== null && !isFileDrag(e) && e.relatedTarget === null && e.buttons !== 0) {
+      dragLeftWindow = true;
+    }
     if (e.relatedTarget === null && dropOverlay) {
       dropOverlay.classList.remove('visible');
+    }
+  });
+
+  document.addEventListener('dragenter', (e) => {
+    if (draggedTabId !== null && !isFileDrag(e)) {
+      dragLeftWindow = false;
     }
   });
 
@@ -2266,9 +2687,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     e.preventDefault();
     if (dropOverlay) dropOverlay.classList.remove('visible');
 
+    // In-page tab drop (Chromium / WebView2). The native drop path in Rust
+    // covers WebKit and out-of-window releases; here the backend resolves the
+    // pending payload instead: released in this window it commits the reorder,
+    // released in another window it merges the tab there.
+    if ([...e.dataTransfer.types].includes(TAB_DRAG_MIME)) {
+      window.electron.send('drop-tab-in-window', { x: e.clientX, y: e.clientY });
+      return;
+    }
+
     const files = [...e.dataTransfer.files].filter(f =>
       /\.(md|markdown|txt)$/i.test(f.name),
     );
+    if (files.length === 0) return;
 
     window.electron.openDroppedFiles(files);
   });

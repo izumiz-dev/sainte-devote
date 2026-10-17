@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "tauri::Emitter::emit", reason = "Emitter::emit broadcasts to every window. Use ipc::emit_to_window." },
+]
