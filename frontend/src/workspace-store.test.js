@@ -239,3 +239,73 @@ test('primary startup merges unclaimed workspaces and a new window keeps its own
   assert.equal(fresh.workspaceId === primary.workspaceId, false);
   fresh.db.close();
 });
+
+test('archiveTabs stores non-empty tabs and ignores empty ones', async () => {
+  const db = await store.openWorkspaceDb();
+  await store.archiveTabs(db, [
+    { title: 'Empty Tab', content: '   ' },
+    { title: 'Tab 1', content: 'hello world', deletedAt: 1000 },
+    { title: 'Tab 2', content: 'second item', deletedAt: 2000 },
+  ]);
+
+  const items = await store.listTrash(db);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].title, 'Tab 2');
+  assert.equal(items[0].content, 'second item');
+  assert.equal(items[1].title, 'Tab 1');
+  assert.equal(items[1].content, 'hello world');
+  db.close();
+});
+
+test('restoreTrashItem retrieves and removes item atomically', async () => {
+  const db = await store.openWorkspaceDb();
+  await store.archiveTabs(db, [{ title: 'To Restore', content: 'restore me', deletedAt: 500 }]);
+  const items = await store.listTrash(db);
+  assert.equal(items.length, 1);
+  const targetId = items[0].id;
+
+  const restored = await store.restoreTrashItem(db, targetId);
+  assert.equal(restored.title, 'To Restore');
+  assert.equal(restored.content, 'restore me');
+
+  const after = await store.listTrash(db);
+  assert.equal(after.length, 0);
+  db.close();
+});
+
+test('deleteTrashItem and clearTrash delete items correctly', async () => {
+  const db = await store.openWorkspaceDb();
+  await store.archiveTabs(db, [
+    { title: 'Item 1', content: 'first', deletedAt: 100 },
+    { title: 'Item 2', content: 'second', deletedAt: 200 },
+  ]);
+  let items = await store.listTrash(db);
+  assert.equal(items.length, 2);
+
+  await store.deleteTrashItem(db, items[0].id);
+  items = await store.listTrash(db);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, 'Item 1');
+
+  await store.clearTrash(db);
+  items = await store.listTrash(db);
+  assert.equal(items.length, 0);
+  db.close();
+});
+
+test('archiveTabs caps items at MAX_TRASH_ITEMS', async () => {
+  const db = await store.openWorkspaceDb();
+  const batch = [];
+  for (let i = 1; i <= 60; i++) {
+    batch.push({ title: `Tab ${i}`, content: `content ${i}`, deletedAt: i });
+  }
+  await store.archiveTabs(db, batch);
+
+  const items = await store.listTrash(db);
+  assert.equal(items.length, store.MAX_TRASH_ITEMS);
+  // Items 1..10 were pruned; newest items 60..11 remain
+  assert.equal(items[0].title, 'Tab 60');
+  assert.equal(items[items.length - 1].title, 'Tab 11');
+  db.close();
+});
+

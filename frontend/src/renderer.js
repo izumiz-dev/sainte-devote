@@ -865,6 +865,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         }
       }
       isInitialized = true;
+      updateTrashUI();
     })();
 
     return initPromise;
@@ -973,7 +974,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           // Unlike a drag, this is an explicit request: keep this window alive
           // even when the moved tab was its only one.
           if (!(await transferTabToNewWindow(tabId))) return;
-          await closeTab(tabId, { skipConfirm: true });
+          await closeTab(tabId, { skipConfirm: true, skipTrash: true });
         }
       }
     ];
@@ -1174,6 +1175,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     if (event.key === 'Escape' && contextMenu) {
       hideContextMenu();
+    }
+
+    if (event.key === 'Escape' && trashPopover && !trashPopover.classList.contains('hidden')) {
+      hideTrashPopover();
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key === 't') {
@@ -1453,7 +1458,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   // this window has nothing to show, so close it.
   async function removeTransferredTab(tabId) {
     if (tabId === null || tabId === undefined || !tabData[tabId]) return;
-    await closeTab(tabId, { skipConfirm: true, allowEmpty: true });
+    await closeTab(tabId, { skipConfirm: true, allowEmpty: true, skipTrash: true });
     if (Object.keys(tabData).length === 0) {
       await discardWorkspaceAndCloseWindow();
     }
@@ -1556,147 +1561,24 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
   });
 
-  function showConfirmDialog(message, confirmLabel = 'Close') {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        backdrop-filter: blur(2px);
-      `;
-
-      const dialog = document.createElement('div');
-      dialog.style.cssText = `
-        background: white;
-        border-radius: 12px;
-        padding: 24px;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-        max-width: 400px;
-        width: 90%;
-        text-align: center;
-      `;
-
-      if (document.body.classList.contains('dark-theme')) {
-        dialog.style.background = '#1f2937';
-        dialog.style.color = '#f9fafb';
-      }
-
-      const messageEl = document.createElement('p');
-      messageEl.textContent = message;
-      messageEl.style.cssText = `
-        margin: 0 0 24px 0;
-        line-height: 1.5;
-        font-size: 14px;
-        white-space: pre-line;
-      `;
-
-      const buttonContainer = document.createElement('div');
-      buttonContainer.style.cssText = `
-        display: flex;
-        gap: 12px;
-        justify-content: center;
-      `;
-
-      const cancelBtn = document.createElement('button');
-      cancelBtn.textContent = 'Cancel';
-      cancelBtn.style.cssText = `
-        padding: 8px 20px;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        background: #f9fafb;
-        color: #374151;
-        font-size: 14px;
-        cursor: pointer;
-        font-weight: 500;
-      `;
-
-      const confirmBtn = document.createElement('button');
-      confirmBtn.textContent = confirmLabel;
-      confirmBtn.style.cssText = `
-        padding: 8px 20px;
-        border: 1px solid #dc2626;
-        border-radius: 6px;
-        background: #dc2626;
-        color: white;
-        font-size: 14px;
-        cursor: pointer;
-        font-weight: 500;
-      `;
-
-      if (document.body.classList.contains('dark-theme')) {
-        cancelBtn.style.background = '#374151';
-        cancelBtn.style.borderColor = '#4b5563';
-        cancelBtn.style.color = '#d1d5db';
-      }
-
-      const finish = (value) => {
-        document.removeEventListener('keydown', handleKeydown);
-        if (document.body.contains(overlay)) {
-          document.body.removeChild(overlay);
-        }
-        resolve(value);
-      };
-
-      cancelBtn.addEventListener('click', () => finish(false));
-      confirmBtn.addEventListener('click', () => finish(true));
-
-      const handleKeydown = (e) => {
-        if (e.key === 'Escape') {
-          finish(false);
-        } else if (e.key === 'Enter') {
-          if (document.activeElement === cancelBtn) {
-            finish(false);
-          } else {
-            finish(true);
-          }
-        }
-      };
-
-      document.addEventListener('keydown', handleKeydown);
-
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-          finish(false);
-        }
-      });
-
-      buttonContainer.appendChild(confirmBtn);
-      buttonContainer.appendChild(cancelBtn);
-      dialog.appendChild(messageEl);
-      dialog.appendChild(buttonContainer);
-      overlay.appendChild(dialog);
-      document.body.appendChild(overlay);
-
-      setTimeout(() => cancelBtn.focus(), 10);
-    });
-  }
 
   let windowCloseInFlight = false;
   async function handleWindowCloseRequested() {
     if (windowCloseInFlight) return;
     windowCloseInFlight = true;
     try {
-      const doomed = Object.entries(tabData).filter(([id, tab]) => {
-        if (tab.filePath) return false;
-        const content = editors[id]?.getValue() ?? tab.content ?? '';
-        return content.trim().length > 0;
-      });
-      if (doomed.length > 0) {
-        const confirmed = await showConfirmDialog(
-          `Closing this window will permanently delete ${doomed.length} scratch tab${doomed.length === 1 ? '' : 's'}.`,
-        );
-        if (!confirmed) {
-          window.electron.send('close-window-cancelled');
-          return;
-        }
+      const doomed = Object.entries(tabData)
+        .filter(([id, tab]) => {
+          if (tab.filePath) return false;
+          const content = editors[id]?.getValue() ?? tab.content ?? '';
+          return content.trim().length > 0;
+        })
+        .map(([id, tab]) => ({
+          title: tab.title || `Untitled ${getDisplayTabNumber(id)}`,
+          content: editors[id]?.getValue() ?? tab.content ?? '',
+        }));
+      if (doomed.length > 0 && db) {
+        await workspaceStore.archiveTabs(db, doomed);
       }
       if (db && currentWorkspaceId) {
         await workspaceStore.deleteWorkspace(db, currentWorkspaceId);
@@ -1723,12 +1605,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       : '';
     const isEmptyScratchTab = isScratchTab && scratchContent.trim().length === 0;
 
-    if (isScratchTab && !options.skipConfirm) {
-      if (scratchContent.trim().length > 0) {
-        const confirmed = await showConfirmDialog(
-          `Close "${tabTitle}"?\n\nThis scratch tab will be permanently deleted.`,
-        );
-        if (!confirmed) return;
+    if (isScratchTab && !options.skipTrash && scratchContent.trim().length > 0) {
+      if (db) {
+        try {
+          await workspaceStore.archiveTabs(db, [
+            {
+              title: tabTitle,
+              content: scratchContent,
+            },
+          ]);
+          await updateTrashUI();
+        } catch (error) {
+          console.error('Failed to archive scratch tab:', error);
+        }
       }
     }
 
@@ -1799,6 +1688,170 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     updateWindowTitle();
   }
+
+  // ---------------------------------------------------------------------------
+  // Scratch-tab archive (trash / restore) UI
+  // ---------------------------------------------------------------------------
+  const trashBtn = document.getElementById('trash-btn');
+  const trashBadge = document.getElementById('trash-badge');
+  const trashPopover = document.getElementById('trash-popover');
+  const trashList = document.getElementById('trash-list');
+  const trashClearAll = document.getElementById('trash-clear-all');
+  const trashClose = document.getElementById('trash-close');
+
+  function formatRelativeTime(timestamp) {
+    if (!timestamp) return '';
+    const diff = Math.max(0, Date.now() - timestamp);
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(timestamp).toLocaleDateString();
+  }
+
+  async function updateTrashUI() {
+    if (!db) return;
+    try {
+      const items = await workspaceStore.listTrash(db);
+      if (trashBadge) {
+        if (items.length > 0) {
+          trashBadge.textContent = items.length > 99 ? '99+' : String(items.length);
+          trashBadge.classList.remove('hidden');
+        } else {
+          trashBadge.classList.add('hidden');
+        }
+      }
+      if (trashPopover && !trashPopover.classList.contains('hidden')) {
+        renderTrashList(items);
+      }
+    } catch (error) {
+      console.error('Failed to update trash UI:', error);
+    }
+  }
+
+  function renderTrashList(items) {
+    if (!trashList) return;
+    if (!items || items.length === 0) {
+      trashList.innerHTML = '<div class="trash-empty">No archived tabs</div>';
+      return;
+    }
+    trashList.innerHTML = items
+      .map((item) => {
+        const title = item.title || 'Untitled';
+        const snippet =
+          (item.content || '')
+            .trim()
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(' ') || '(Empty)';
+        return `
+          <div class="trash-item" data-id="${item.id}">
+            <div class="trash-item-info">
+              <div class="trash-item-title-row">
+                <span class="trash-item-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+                <span class="trash-item-time">${formatRelativeTime(item.deletedAt)}</span>
+              </div>
+              <div class="trash-item-preview" title="${escapeHtml(snippet)}">${escapeHtml(snippet)}</div>
+            </div>
+            <div class="trash-item-actions">
+              <button type="button" class="trash-restore-btn" data-action="restore" data-id="${item.id}">戻す</button>
+              <button type="button" class="trash-delete-btn" data-action="delete" data-id="${item.id}" title="Delete permanently">×</button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  async function showTrashPopover() {
+    if (!trashPopover) return;
+    if (db) {
+      const items = await workspaceStore.listTrash(db);
+      renderTrashList(items);
+    }
+    trashPopover.classList.remove('hidden');
+  }
+
+  function hideTrashPopover() {
+    if (!trashPopover) return;
+    trashPopover.classList.add('hidden');
+  }
+
+  function toggleTrashPopover() {
+    if (!trashPopover) return;
+    if (trashPopover.classList.contains('hidden')) {
+      showTrashPopover();
+    } else {
+      hideTrashPopover();
+    }
+  }
+
+  if (trashBtn) {
+    trashBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTrashPopover();
+    });
+  }
+
+  if (trashClose) {
+    trashClose.addEventListener('click', () => {
+      hideTrashPopover();
+    });
+  }
+
+  if (trashClearAll) {
+    trashClearAll.addEventListener('click', async () => {
+      if (!db) return;
+      await workspaceStore.clearTrash(db);
+      await updateTrashUI();
+    });
+  }
+
+  if (trashList) {
+    trashList.addEventListener('click', async (e) => {
+      const actionBtn = e.target.closest('button[data-action]');
+      if (!actionBtn || !db) return;
+      const action = actionBtn.dataset.action;
+      const itemId = Number(actionBtn.dataset.id);
+      if (!Number.isFinite(itemId)) return;
+
+      if (action === 'restore') {
+        const item = await workspaceStore.restoreTrashItem(db, itemId);
+        if (item) {
+          await addTab(null, item.title, item.content);
+          showNotification(`Restored: ${item.title || 'Untitled'}`);
+        }
+        await updateTrashUI();
+        hideTrashPopover();
+      } else if (action === 'delete') {
+        await workspaceStore.deleteTrashItem(db, itemId);
+        await updateTrashUI();
+      }
+    });
+  }
+
+  if (trashPopover) {
+    trashPopover.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (
+      trashPopover &&
+      !trashPopover.classList.contains('hidden') &&
+      !trashPopover.contains(e.target) &&
+      (!trashBtn || !trashBtn.contains(e.target))
+    ) {
+      hideTrashPopover();
+    }
+  });
 
   previewContainer.style.display = 'none';
 
@@ -2303,6 +2356,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       { id: 'copy-clipboard', type: 'command', label: 'Copy Tab to Clipboard', detail: 'Copy current tab content to clipboard', icon: icons.copy, action: () => { if (currentTab) copyToClipboard(currentTab); } },
       { id: 'backup-export-all', type: 'command', label: 'Backup: Export All Tabs (.zip)', detail: 'Export all tabs as a ZIP file', icon: icons.archive, action: () => exportAllTabs() },
       { id: 'open-settings', type: 'command', label: 'Open Settings', detail: 'Editor / preview fonts and theme', icon: icons.settings, action: () => showSettings() },
+      { id: 'open-archive', type: 'command', label: 'Open Archived Tabs', detail: 'View and restore archived scratch tabs', icon: icons.archive, action: () => showTrashPopover() },
       { id: 'theme-system', type: 'command', label: 'Theme: Use System', detail: 'Follow the OS light / dark setting', icon: icons.monitor, action: () => setTheme('system') },
       { id: 'theme-light', type: 'command', label: 'Theme: Light', detail: 'Always use the light theme', icon: icons.sun, action: () => setTheme('light') },
       { id: 'theme-dark', type: 'command', label: 'Theme: Dark', detail: 'Always use the dark theme', icon: icons.moon, action: () => setTheme('dark') },
@@ -2330,6 +2384,36 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         });
       }
     });
+
+    if (db) {
+      const trashItems = await workspaceStore.listTrash(db);
+      trashItems.forEach((item) => {
+        const title = item.title || 'Untitled';
+        if (
+          isMatch(title) ||
+          isMatch('trash') ||
+          isMatch('archive') ||
+          isMatch('restore') ||
+          (item.content && isMatch(item.content))
+        ) {
+          results.push({
+            id: `trash-${item.id}`,
+            type: 'command',
+            label: `Restore: ${title}`,
+            detail: (item.content || '').slice(0, 60),
+            icon: icons.archive,
+            action: async () => {
+              const restored = await workspaceStore.restoreTrashItem(db, item.id);
+              if (restored) {
+                await addTab(null, restored.title, restored.content);
+                showNotification(`Restored: ${restored.title || 'Untitled'}`);
+                await updateTrashUI();
+              }
+            },
+          });
+        }
+      });
+    }
 
     if (keywords.length === 0) {
       const recentTabs = tabHistory.filter(id => id !== currentTab).slice(0, 5);

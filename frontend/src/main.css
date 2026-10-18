@@ -318,64 +318,359 @@ body.tabs-hidden #preview {
   cursor: default;
 }
 
+#tabbar {
+  display: flex;
+  align-items: center;
+  background: #e7e9ed;
+  height: 40px;
+  min-height: 40px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+}
+
+.dark-theme #tabbar {
+  background: #14171c;
+}
+
+body.tabs-hidden #tabbar {
+  display: none;
+}
+
 #tabs {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-end;
   padding: 0;
   gap: 0;
-  background: #e7e9ed;
+  background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
   will-change: transform;
   height: 40px;
   min-height: 40px;
-  flex-shrink: 0;
   scroll-behavior: auto;
   -webkit-app-region: no-drag;
-  z-index: 20;
   position: relative;
 }
 
-/*
- * Insertion indicator shown while a tab is being dragged inside the window.
- * It marks the exact boundary where the tab will land, which the moving tab
- * alone does not convey clearly (the OS drag image follows the pointer and
- * covers the target slot).
- */
-.tab-drop-marker {
+#tabbar-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+  height: 100%;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+#trash-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+}
+
+#trash-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #374151;
+}
+
+.dark-theme #trash-btn {
+  color: #8b929e;
+}
+
+.dark-theme #trash-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+}
+
+#trash-badge {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  margin-left: -1.5px;
-  border-radius: 2px;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
   background: #2563eb;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   pointer-events: none;
-  display: none;
-  z-index: 30;
+  box-sizing: border-box;
 }
 
-#tabs.tab-drag-active .tab-drop-marker {
-  display: block;
-}
-
-.dark-theme .tab-drop-marker {
-  background: #60a5fa;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
-}
-
-#tabs::-webkit-scrollbar {
+#trash-badge.hidden {
   display: none;
 }
 
-body.tabs-hidden #tabs {
+.dark-theme #trash-badge {
+  background: #3b82f6;
+}
+
+#trash-popover {
+  position: fixed;
+  top: 84px;
+  right: 10px;
+  width: 340px;
+  max-height: 460px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  z-index: 10002;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+  animation: popoverFadeIn 0.15s ease-out;
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#trash-popover.hidden {
   display: none;
 }
 
-.dark-theme #tabs {
-  background: #14171c;
+.dark-theme #trash-popover {
+  background: #1f2937;
+  border-color: #374151;
+  color: #f9fafb;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+}
+
+.trash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+}
+
+.dark-theme .trash-header {
+  border-bottom-color: #374151;
+}
+
+.trash-title {
+  font-size: 13px;
+  color: #111827;
+}
+
+.dark-theme .trash-title {
+  color: #f3f4f6;
+}
+
+.trash-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trash-action-link {
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.trash-action-link:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.dark-theme .trash-action-link {
+  color: #9ca3af;
+}
+
+.dark-theme .trash-action-link:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.trash-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.trash-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #111827;
+}
+
+.dark-theme .trash-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3f4f6;
+}
+
+.trash-list {
+  overflow-y: auto;
+  max-height: 380px;
+  padding: 4px 0;
+}
+
+.trash-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.dark-theme .trash-empty {
+  color: #6b7280;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  gap: 8px;
+  transition: background-color 0.12s ease;
+}
+
+.dark-theme .trash-item {
+  border-bottom-color: #283141;
+}
+
+.trash-item:last-child {
+  border-bottom: none;
+}
+
+.trash-item:hover {
+  background: #f9fafb;
+}
+
+.dark-theme .trash-item:hover {
+  background: #252e3d;
+}
+
+.trash-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-item-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.trash-item-title {
+  font-weight: 500;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dark-theme .trash-item-title {
+  color: #e5e7eb;
+}
+
+.trash-item-time {
+  font-size: 10px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.trash-item-preview {
+  font-size: 11px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.dark-theme .trash-item-preview {
+  color: #9ca3af;
+}
+
+.trash-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.trash-restore-btn {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.trash-restore-btn:hover {
+  background: #1d4ed8;
+}
+
+.dark-theme .trash-restore-btn {
+  background: #3b82f6;
+}
+
+.dark-theme .trash-restore-btn:hover {
+  background: #2563eb;
+}
+
+.trash-delete-btn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+.trash-delete-btn:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.dark-theme .trash-delete-btn:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .tab {

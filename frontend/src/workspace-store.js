@@ -9,7 +9,8 @@
 })(globalThis, function () {
   const DB_NAME = 'SainteDevoteWorkspaces';
   const LEGACY_DB_NAME = 'SainteDevoteDB';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
+  const MAX_TRASH_ITEMS = 50;
 
   function workspaceRange(workspaceId) {
     return IDBKeyRange.bound([workspaceId], [workspaceId, []]);
@@ -61,6 +62,9 @@
         }
         if (!database.objectStoreNames.contains('meta')) {
           database.createObjectStore('meta', { keyPath: 'key' });
+        }
+        if (!database.objectStoreNames.contains('trash')) {
+          database.createObjectStore('trash', { keyPath: 'id', autoIncrement: true });
         }
       };
       request.onsuccess = () => {
@@ -283,6 +287,80 @@
     return transactionDone(transaction);
   }
 
+  function archiveTabs(db, items) {
+    const valid = (Array.isArray(items) ? items : []).filter(
+      (item) => item && typeof item.content === 'string' && item.content.trim().length > 0,
+    );
+    if (valid.length === 0) return Promise.resolve([]);
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['trash'], 'readwrite');
+      const store = transaction.objectStore('trash');
+      const now = Date.now();
+      valid.forEach((item) => {
+        store.put({
+          title: item.title || '',
+          content: item.content,
+          deletedAt: typeof item.deletedAt === 'number' ? item.deletedAt : now,
+        });
+      });
+      const keysReq = store.getAllKeys();
+      keysReq.onsuccess = () => {
+        const keys = keysReq.result || [];
+        if (keys.length > MAX_TRASH_ITEMS) {
+          const excess = keys.length - MAX_TRASH_ITEMS;
+          for (let i = 0; i < excess; i++) {
+            store.delete(keys[i]);
+          }
+        }
+      };
+      transaction.oncomplete = () => resolve(valid);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('transaction aborted'));
+    });
+  }
+
+  function listTrash(db) {
+    const transaction = db.transaction(['trash'], 'readonly');
+    const store = transaction.objectStore('trash');
+    const request = store.getAll();
+    return requestResult(request).then((items) =>
+      (items || []).sort(
+        (a, b) => (b.deletedAt || 0) - (a.deletedAt || 0) || (b.id || 0) - (a.id || 0),
+      ),
+    );
+  }
+
+  function restoreTrashItem(db, id) {
+    const numId = Number(id);
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['trash'], 'readwrite');
+      const store = transaction.objectStore('trash');
+      const request = store.get(numId);
+      let found = null;
+      request.onsuccess = () => {
+        found = request.result || null;
+        if (found) {
+          store.delete(numId);
+        }
+      };
+      transaction.oncomplete = () => resolve(found);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('transaction aborted'));
+    });
+  }
+
+  function deleteTrashItem(db, id) {
+    const transaction = db.transaction(['trash'], 'readwrite');
+    transaction.objectStore('trash').delete(Number(id));
+    return transactionDone(transaction);
+  }
+
+  function clearTrash(db) {
+    const transaction = db.transaction(['trash'], 'readwrite');
+    transaction.objectStore('trash').clear();
+    return transactionDone(transaction);
+  }
+
   async function absorbWorkspace(db, targetId, sourceId) {
     if (targetId === sourceId) return;
     const sourceTabs = await loadTabs(db, sourceId);
@@ -444,6 +522,12 @@
     deleteTab,
     deleteWorkspace,
     absorbWorkspace,
+    archiveTabs,
+    listTrash,
+    restoreTrashItem,
+    deleteTrashItem,
+    clearTrash,
+    MAX_TRASH_ITEMS,
     bootstrap,
     nextUntitledNumber,
     seedUntitledCounter,
