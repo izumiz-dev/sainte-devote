@@ -380,6 +380,15 @@ impl WindowRegistry {
         self.owners.get(path).is_some_and(|owner| owner != label)
     }
 
+    /// True when `label` currently owns `path`. Tab hand-off payloads must be
+    /// backed by ownership: a window may only transfer files it has open, and
+    /// must not mint write access for paths it merely names.
+    pub fn owns_path(&self, label: &str, path: &Path) -> bool {
+        self.owners
+            .get(path)
+            .is_some_and(|owner| owner.as_str() == label)
+    }
+
     pub fn clear_owner_if(&mut self, path: &Path, label: &str) {
         if self.owners.get(path).is_some_and(|owner| owner == label) {
             self.owners.remove(path);
@@ -577,6 +586,21 @@ mod tests {
         assert!(!routed.queued);
         assert!(registry.conflicts_with_other_owner(&path, &other));
         assert!(!registry.conflicts_with_other_owner(&path, MAIN_LABEL));
+    }
+
+    #[test]
+    fn owns_path_is_scoped_to_the_current_owner() {
+        let mut registry = WindowRegistry::new();
+        let other = registry.allocate_editor().unwrap();
+        let path = PathBuf::from("/notes/a.md");
+        assert!(!registry.owns_path(MAIN_LABEL, &path));
+        registry.set_owner(path.clone(), MAIN_LABEL);
+        assert!(registry.owns_path(MAIN_LABEL, &path));
+        assert!(!registry.owns_path(&other, &path));
+        registry.clear_owner_if(&path, &other);
+        assert!(registry.owns_path(MAIN_LABEL, &path));
+        registry.clear_owner_if(&path, MAIN_LABEL);
+        assert!(!registry.owns_path(MAIN_LABEL, &path));
     }
 
     #[test]

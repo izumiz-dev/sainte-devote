@@ -172,7 +172,7 @@ fn begin_tab_drag(
         content,
         file_path,
     ) {
-        return Err("unknown window".to_string());
+        return Err("tab drag rejected: unknown window or unowned file".to_string());
     }
     Ok(())
 }
