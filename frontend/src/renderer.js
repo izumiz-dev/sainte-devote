@@ -1992,7 +1992,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     previewFontFamily: '', // '' = use github-markdown-css default
     previewFontSize: 0, // 0 = use github-markdown-css default
     windowOpacity: 1, // 0.3 - 1; only applied on macOS
-    windowBlur: 'off', // 'off' | 'low' | 'high'; only applied on macOS
+    windowBlur: 'off', // 'off' | 'dense' | 'sheer'; only applied on macOS
   };
 
   // Window transparency is handled entirely in CSS: Monaco paints an opaque
@@ -2004,9 +2004,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   // A vibrancy material is itself nearly opaque, so once blur is on the app's
   // own surfaces have to step aside or they hide the frost and the window
   // looks opaque again. How far they step aside is what tells the two blur
-  // stages apart: 'low' keeps a good layer of the window's own colour in front
-  // of the frost, 'high' lets the frosted backdrop be the window with only a
-  // thin tint over it.
+  // stages apart: 'dense' keeps a good layer of the window's own colour in
+  // front of the frost, 'sheer' lets the frosted backdrop be the window with
+  // only a thin tint over it.
   //
   // macOS fixes the blur radius per NSVisualEffectMaterial and exposes no
   // numeric radius (NSGlassEffectView on macOS 26 adds no radius either), so a
@@ -2014,7 +2014,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   // changing" rather than as an adjustment. Two named stages it is. The floor
   // keeps body text readable, because the backdrop is a wallpaper rather than a
   // flat colour.
-  const BLUR_SURFACE_FACTORS = { off: 1, low: 0.6, high: 0.18 };
+  const BLUR_SURFACE_FACTORS = { off: 1, dense: 0.6, sheer: 0.18 };
 
   // Curated font presets. value '' means "use the built-in default".
   const FONT_PRESETS = {
@@ -2125,13 +2125,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   // Blur has been a 0-100 slider and, before that, four named presets, so a
-  // stored value from either era has to fold back onto the two stages.
+  // stored value from either era has to fold back onto the two stages. 'low'
+  // and 'high' are what the slider era's two stages were called.
   function normalizeWindowBlur(value) {
     if (value in BLUR_SURFACE_FACTORS) return value;
-    if (value === 'strong') return 'high';
+    if (value === 'strong' || value === 'high') return 'sheer';
+    if (value === 'soft' || value === 'standard' || value === 'low') return 'dense';
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || numeric <= 0) return 'off';
-    return numeric <= 50 ? 'low' : 'high';
+    return numeric <= 50 ? 'dense' : 'sheer';
   }
 
   // How much of the app's own surface stays in front of the native frost.

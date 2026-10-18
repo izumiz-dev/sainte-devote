@@ -21,8 +21,8 @@ fn material_for(strength: &str) -> Result<Option<window_vibrancy::NSVisualEffect
         // material is meant for a window's own content view and fails to
         // composite when the NSVisualEffectView is only a subview sitting
         // behind the webview, which left the window looking unblurred.
-        "low" => Some(NSVisualEffectMaterial::UnderWindowBackground),
-        "high" => Some(NSVisualEffectMaterial::FullScreenUI),
+        "dense" => Some(NSVisualEffectMaterial::UnderWindowBackground),
+        "sheer" => Some(NSVisualEffectMaterial::FullScreenUI),
         other => return Err(format!("unknown window blur strength: {other}")),
     })
 }
