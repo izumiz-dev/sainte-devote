@@ -802,11 +802,31 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     updateWindowTitle();
   }
 
+  // Untrusted document HTML must not be able to render fake form controls or
+  // modal overlays in the preview: forms, buttons, fieldsets, and dialogs are
+  // dropped outright, and only disabled task-list checkboxes may survive as
+  // inputs. The CSP form-action/base-uri rules back this up at the engine
+  // level.
+  const PREVIEW_SANITIZE_OPTIONS = {
+    FORBID_TAGS: ['form', 'button', 'textarea', 'select', 'fieldset', 'dialog'],
+    FORBID_ATTR: ['action', 'formaction'],
+  };
+
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'INPUT') {
+      if ((node.getAttribute('type') || '').toLowerCase() !== 'checkbox') {
+        node.remove();
+      } else {
+        node.setAttribute('disabled', '');
+      }
+    }
+  });
+
   function getMarkdownHtml(content, tabId) {
     if (markdownCache[tabId] && markdownCache[tabId].content === content) {
       return markdownCache[tabId].html;
     }
-    const html = DOMPurify.sanitize(marked.parse(content));
+    const html = DOMPurify.sanitize(marked.parse(content), PREVIEW_SANITIZE_OPTIONS);
     markdownCache[tabId] = { content, html };
     return html;
   }

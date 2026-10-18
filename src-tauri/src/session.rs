@@ -179,18 +179,37 @@ pub fn create_editor_window_with_tab<R: Runtime>(
         }
     }
 
+    if !owns_dragged_file(app, source_label, file_path) {
+        return Err("window does not own the dragged file".to_string());
+    }
+
+    let normalized_file = match file_path {
+        Some(path) => {
+            // Check readability BEFORE creating the target window or releasing
+            // the source window's claim: if the file was deleted or replaced
+            // with a symlink, leave the tab in its source window untouched.
+            let normalized = normalize_owned_path(Path::new(path), &current_dir());
+            files::read_file_content(&normalized)?;
+            Some((path, normalized))
+        }
+        None => None,
+    };
+
     let label = create_editor_window(app, anchor)?;
 
-    match file_path {
-        Some(path) => {
+    match normalized_file {
+        Some((path, normalized)) => {
             // Hand the file over first, otherwise open_one routes it straight
             // back to the window we are taking it from. route_open queues
             // while the new window is still booting, and on_renderer_ready
-            // flushes it.
+            // flushes it. Preserve the source window's write grant so a
+            // read-only (recent-file) tab stays read-only after detaching.
+            let grant_write = app
+                .state::<ActiveFilePathsState>()
+                .is_granted(&normalized, source_label);
             close_path(app, source_label, path);
-            let normalized = normalize_owned_path(Path::new(path), &current_dir());
             let state = app.state::<WindowRegistryState>();
-            let routed = state.lock().route_open(normalized, &label, true);
+            let routed = state.lock().route_open(normalized, &label, grant_write);
             if !routed.queued && routed.target != label {
                 focus_label(app, &routed.target);
             }
@@ -536,6 +555,20 @@ pub fn close_path<R: Runtime>(app: &AppHandle<R>, label: &str, file_path: &str) 
         .clear_owner_if(&path, label);
 }
 
+/// A tab hand-off may only carry a file the source window actually owns.
+/// Without this, a renderer could name an arbitrary path in `begin-tab-drag`
+/// (or the detach command) and have the transfer path open it with a write
+/// grant, bypassing "only an explicit user gesture grants write access".
+fn owns_dragged_file<R: Runtime>(app: &AppHandle<R>, label: &str, file_path: Option<&str>) -> bool {
+    let Some(file_path) = file_path else {
+        return true;
+    };
+    let path = normalize_owned_path(Path::new(file_path), &current_dir());
+    app.state::<WindowRegistryState>()
+        .lock()
+        .owns_path(label, &path)
+}
+
 /// Register the tab `label` started dragging so a drop landing on another
 /// window can pick it up. `tab_id` is echoed back to the source window when
 /// the drop is resolved; `origin_workspace_id` names the scratch workspace the
@@ -549,6 +582,9 @@ pub fn begin_tab_drag<R: Runtime>(
     content: String,
     file_path: Option<String>,
 ) -> bool {
+    if !owns_dragged_file(app, label, file_path.as_deref()) {
+        return false;
+    }
     app.state::<WindowRegistryState>().lock().begin_tab_drag(
         label,
         TabDrag {
@@ -600,6 +636,12 @@ pub fn handle_tab_drop<R: Runtime>(app: &AppHandle<R>, target: &str, position: O
 
     match drag.file_path.as_deref() {
         Some(path) => {
+            // Ownership can change mid-drag (the tab may have been closed or
+            // transferred meanwhile). A stale payload must not mint write
+            // access: leave the tab in its source window instead.
+            if !owns_dragged_file(app, &drag.source, Some(path)) {
+                return;
+            }
             // Check readability BEFORE releasing the source window's claim:
             // if the file has become unreadable, the tab simply stays in its
             // window with grant, watcher and owner intact, so autosave keeps
@@ -610,11 +652,20 @@ pub fn handle_tab_drop<R: Runtime>(app: &AppHandle<R>, target: &str, position: O
                 return;
             }
             // Hand the file over next, otherwise open_one routes it straight
-            // back to the window we are taking it from.
+            // back to the window we are taking it from. Preserve the source
+            // window's write grant so moving a read-only (recent-file) tab
+            // does not escalate it to writable on the target window.
+            let grant_write = app
+                .state::<ActiveFilePathsState>()
+                .is_granted(&normalized, &drag.source);
             close_path(app, &drag.source, path);
-            if let OpenOutcome::Rejected(error) =
-                open_one(app, Path::new(path), target, true, EmitPolicy::Always)
-            {
+            if let OpenOutcome::Rejected(error) = open_one(
+                app,
+                Path::new(path),
+                target,
+                grant_write,
+                EmitPolicy::Always,
+            ) {
                 eprintln!("tab-drop: cannot open {path}: {error}");
                 // Rare race between the read and the open: re-establish the
                 // tab on its source window so it stays usable there.
@@ -627,7 +678,7 @@ pub fn handle_tab_drop<R: Runtime>(app: &AppHandle<R>, target: &str, position: O
                     app,
                     Path::new(path),
                     &drag.source,
-                    true,
+                    grant_write,
                     EmitPolicy::IfTransferred,
                 ) {
                     eprintln!("tab-drop: restore to source failed {path}: {restore_error}");
