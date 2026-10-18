@@ -641,7 +641,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     const closeBtn = document.createElement('span');
     closeBtn.classList.add('close-tab-btn');
-    closeBtn.textContent = '×';
+    closeBtn.title = 'Close tab';
+    closeBtn.setAttribute('aria-label', 'Close tab');
+    closeBtn.innerHTML =
+      '<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" style="pointer-events: none; display: block;">' +
+      '<path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />' +
+      '</svg>';
     newTab.appendChild(closeBtn);
 
     tabs.insertBefore(newTab, document.querySelector('.add-tab-btn'));

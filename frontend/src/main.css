@@ -792,8 +792,6 @@ body.tabs-hidden #tabbar {
   justify-content: center;
   width: 19px;
   height: 19px;
-  font-size: 0;
-  line-height: 1;
   opacity: 0;
   transition:
     opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
@@ -801,27 +799,12 @@ body.tabs-hidden #tabbar {
   border-radius: 5px;
   flex-shrink: 0;
   color: inherit;
-  position: relative;
   margin-left: auto;
 }
 
-.close-tab-btn::before,
-.close-tab-btn::after {
-  content: '';
-  position: absolute;
-  width: 10px;
-  height: 1.25px;
-  background-color: currentColor;
-  border-radius: 1px;
-  transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.close-tab-btn::before {
-  transform: rotate(45deg);
-}
-
-.close-tab-btn::after {
-  transform: rotate(-45deg);
+.close-tab-btn svg {
+  display: block;
+  pointer-events: none;
 }
 
 .tab:hover .close-tab-btn,
