@@ -106,12 +106,6 @@ pub fn build_reserved_editor_window<R: Runtime>(
 /// is the window built — creation has to stay off the event loop thread or the
 /// runtime channel deadlocks. `on_renderer_ready` drains the queue once the
 /// renderer boots, exactly like a startup open.
-///
-/// macOS-only: closing the last window exits the app everywhere else, so the
-/// no-window state this recovers from cannot happen there. The only caller is
-/// the macOS `RunEvent::Opened` arm in `lib.rs`, and leaving the function
-/// ungated trips `clippy -D warnings` on Linux and Windows.
-#[cfg(target_os = "macos")]
 pub fn spawn_editor_window_for_paths<R: Runtime>(app: &AppHandle<R>, paths: &[PathBuf]) {
     // Read the anchor before reserving, so the lookup cannot pick the label we
     // are about to create.
@@ -354,11 +348,10 @@ pub fn open_argv<R: Runtime>(app: &AppHandle<R>, argv: &[String], cwd: &Path) ->
     if paths.is_empty() {
         return false;
     }
-    let requested = app
-        .state::<WindowRegistryState>()
-        .lock()
-        .menu_target()
-        .unwrap_or_else(|| MAIN_LABEL.to_string());
+    let Some(requested) = app.state::<WindowRegistryState>().lock().menu_target() else {
+        spawn_editor_window_for_paths(app, &paths);
+        return true;
+    };
     let mut raised = false;
     for path in paths {
         match open_one(app, &path, &requested, true, EmitPolicy::Always) {
@@ -378,17 +371,11 @@ pub fn open_argv<R: Runtime>(app: &AppHandle<R>, argv: &[String], cwd: &Path) ->
 
 #[allow(dead_code)]
 pub fn open_user_paths<R: Runtime>(app: &AppHandle<R>, paths: &[PathBuf]) {
-    let requested = {
-        let registry_state = app.state::<WindowRegistryState>();
-        let registry = registry_state.lock();
-        if registry.is_ready(MAIN_LABEL) {
-            registry
-                .menu_target()
-                .unwrap_or_else(|| MAIN_LABEL.to_string())
-        } else {
-            MAIN_LABEL.to_string()
-        }
-    };
+    let requested = app
+        .state::<WindowRegistryState>()
+        .lock()
+        .menu_target()
+        .unwrap_or_else(|| MAIN_LABEL.to_string());
     for path in paths {
         match open_one(app, path, &requested, true, EmitPolicy::Always) {
             OpenOutcome::Delivered(opened) => {

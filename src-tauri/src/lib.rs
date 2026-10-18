@@ -302,6 +302,8 @@ pub fn run() {
             if !opened {
                 if let Some(label) = app.state::<WindowRegistryState>().lock().menu_target() {
                     session::focus_label(app, &label);
+                } else {
+                    session::spawn_editor_window(app.clone(), None);
                 }
             }
         }))

@@ -309,3 +309,52 @@ test('archiveTabs caps items at MAX_TRASH_ITEMS', async () => {
   db.close();
 });
 
+test('reopening as primary restores scratch tabs after single window closed', async () => {
+  const claims = new Set();
+  const claim = async (ids) => {
+    const granted = [];
+    ids.forEach((id) => {
+      if (!claims.has(id)) {
+        claims.add(id);
+        granted.push(id);
+      }
+    });
+    return granted;
+  };
+
+  // 1. First run: primary window boots, user writes scratch tabs
+  const firstBoot = await store.bootstrap({
+    role: 'primary',
+    workspaceId: null,
+    claim,
+  });
+  const firstDb = firstBoot.db;
+  const wsId = firstBoot.workspaceId;
+  await store.saveScratchMeta(firstDb, wsId, [
+    { id: 1, title: 'My Scratch Note', order: 0 },
+    { id: 2, title: 'Untitled 2', order: 1 },
+  ]);
+  await store.saveContent(firstDb, wsId, 1, '# Important Thoughts\nhello');
+  await store.saveContent(firstDb, wsId, 2, 'second note body');
+
+  // Single window closes: claims are released, but workspace and tabs stay in IndexedDB
+  claims.clear();
+  firstDb.close();
+
+  // 2. Window is reopened (e.g. via Dock click or New Window when 0 windows exist)
+  // Backend assigns role: 'primary' to this new window
+  const secondBoot = await store.bootstrap({
+    role: 'primary',
+    workspaceId: null,
+    claim,
+  });
+
+  // Verify the new window reclaimed the previous workspace and restored tabs
+  assert.equal(secondBoot.workspaceId, wsId);
+  assert.equal(secondBoot.tabs.length, 2);
+  assert.equal(secondBoot.tabs[0].title, 'My Scratch Note');
+  assert.equal(secondBoot.tabs[0].content, '# Important Thoughts\nhello');
+  assert.equal(secondBoot.tabs[1].title, 'Untitled 2');
+  assert.equal(secondBoot.tabs[1].content, 'second note body');
+  secondBoot.db.close();
+});

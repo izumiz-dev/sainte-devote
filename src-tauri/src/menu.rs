@@ -110,6 +110,9 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::Men
     }
 
     let Some(label) = app.state::<WindowRegistryState>().lock().menu_target() else {
+        if id == "new-tab" {
+            session::spawn_editor_window(app.clone(), None);
+        }
         return;
     };
     if id == "close-window" {

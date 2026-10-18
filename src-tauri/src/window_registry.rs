@@ -151,8 +151,12 @@ impl WindowRegistry {
         let id = self.next_editor_id;
         self.next_editor_id = self.next_editor_id.saturating_add(1);
         let label = format!("editor-{id}");
-        self.windows
-            .insert(label.clone(), WindowEntry::new(WindowRole::New));
+        let role = if self.windows.values().any(|entry| !entry.closing) {
+            WindowRole::New
+        } else {
+            WindowRole::Primary
+        };
+        self.windows.insert(label.clone(), WindowEntry::new(role));
         Ok(label)
     }
 
@@ -205,14 +209,14 @@ impl WindowRegistry {
             return CloseRequestOutcome::Allow;
         };
         if entry.close_pending || entry.closing {
-            entry.closing = true;
+            self.mark_closing(label);
             return CloseRequestOutcome::Allow;
         }
         if others_alive && entry.renderer_ready {
             entry.close_pending = true;
             return CloseRequestOutcome::PreventAndAsk;
         }
-        entry.closing = true;
+        self.mark_closing(label);
         CloseRequestOutcome::Allow
     }
 
@@ -221,6 +225,8 @@ impl WindowRegistry {
             entry.closing = true;
             entry.close_pending = false;
         }
+        self.claims.retain(|_, owner| owner != label);
+        self.clear_tab_drag(label);
     }
 
     pub fn clear_close_pending(&mut self, label: &str) {
@@ -927,5 +933,61 @@ mod tests {
         // After destroying editor, main still has no other alive windows.
         registry.destroy_window(&editor);
         assert!(!registry.has_other_alive_windows(MAIN_LABEL));
+    }
+
+    #[test]
+    fn allocate_editor_assigns_primary_when_no_living_windows() {
+        let mut registry = WindowRegistry::new();
+        let first = registry.allocate_editor().unwrap();
+        // main is still alive, so first editor gets New role.
+        assert_eq!(
+            registry.context(&first).map(|c| c.role),
+            Some("new".to_string())
+        );
+
+        // Close all windows.
+        registry.destroy_window(MAIN_LABEL);
+        registry.destroy_window(&first);
+
+        // When all windows are gone, next allocated editor gets Primary role.
+        let reopen = registry.allocate_editor().unwrap();
+        assert_eq!(
+            registry.context(&reopen).map(|c| c.role),
+            Some("primary".to_string())
+        );
+
+        // A second editor while reopen is alive gets New role.
+        let second = registry.allocate_editor().unwrap();
+        assert_eq!(
+            registry.context(&second).map(|c| c.role),
+            Some("new".to_string())
+        );
+    }
+
+    #[test]
+    fn closing_window_releases_claims_immediately_for_reopen() {
+        let mut registry = WindowRegistry::new();
+        let ws_id = hex_id(42);
+        registry
+            .claim(MAIN_LABEL, std::slice::from_ref(&ws_id))
+            .unwrap();
+
+        // When main is closing (via on_close_requested Allow), its claim is freed immediately.
+        assert_eq!(
+            registry.on_close_requested(MAIN_LABEL),
+            CloseRequestOutcome::Allow
+        );
+
+        // A newly allocated editor (which gets Primary role since main is closing)
+        // can claim the same workspace right away before main's destroy_window.
+        let reopen = registry.allocate_editor().unwrap();
+        assert_eq!(
+            registry.context(&reopen).map(|c| c.role),
+            Some("primary".to_string())
+        );
+        let granted = registry
+            .claim(&reopen, std::slice::from_ref(&ws_id))
+            .unwrap();
+        assert_eq!(granted, vec![ws_id]);
     }
 }
