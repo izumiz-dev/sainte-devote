@@ -1117,6 +1117,19 @@ body.tabs-hidden #tabbar {
 }
 
 /*
+ * Monaco signals "there is more content above (or below)" with a dark
+ * full-width band at the edge of the viewport: the .scroll-decoration strip
+ * plus the scrollable element's own edge shadow, both inset shadows in
+ * --vscode-scrollbar-shadow. Over an opaque editor they are barely visible,
+ * but on our see-through surface they read as a stray stripe under the tab
+ * bar, so drop them; the scrollbar thumb still shows the position.
+ */
+.monaco-editor .scroll-decoration,
+.monaco-editor .monaco-scrollable-element > .shadow {
+  box-shadow: none !important;
+}
+
+/*
  * monacorc.json sets renderLineHighlight: "all", so the line with the caret
  * gets a full-width band. It blends into an opaque editor background, but on a
  * translucent window it reads as a floating stripe under the tab bar, so drop
