@@ -123,12 +123,10 @@
           </div>
         </div>
         <div class="settings-group hidden" id="settings-window-blur-group">
-          <label class="settings-label">Window Blur</label>
-          <div class="settings-segment" id="settings-window-blur">
-            <button type="button" data-blur="off">Off</button>
-            <button type="button" data-blur="soft">Soft</button>
-            <button type="button" data-blur="standard">Standard</button>
-            <button type="button" data-blur="strong">Strong</button>
+          <label class="settings-label" for="settings-window-blur">Window Blur</label>
+          <div class="settings-slider">
+            <input id="settings-window-blur" type="range" min="0" max="100" step="1" />
+            <span class="settings-value" id="settings-window-blur-value">Off</span>
           </div>
         </div>
         <div class="settings-group">

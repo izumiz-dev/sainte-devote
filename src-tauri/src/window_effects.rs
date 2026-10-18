@@ -1,36 +1,39 @@
 //! macOS backdrop blur (vibrancy) used by the Window Blur setting.
 //!
 //! macOS fixes the blur radius per `NSVisualEffectMaterial` and exposes no
-//! public API for a numeric radius, so the renderer sends one of a few
-//! presets instead of a slider. Tauri cannot remove a vibrancy effect on
-//! macOS, so this module talks to `window-vibrancy` directly.
+//! public API for a numeric radius, so the slider's value only selects a
+//! material here; how much of the app's own surface stays in front of that
+//! frost is the renderer's continuous half of the control. Tauri cannot remove
+//! a vibrancy effect on macOS, so this module talks to `window-vibrancy`
+//! directly.
 
 use tauri::{Runtime, WebviewWindow};
 
+/// Maps the renderer's 0-100 blur slider onto an `NSVisualEffectMaterial`.
+/// macOS fixes the blur radius per material, so these ranges only pick a tint;
+/// the continuous part of the slider lives in the renderer, which scales how
+/// much of the app's own surface stays in front of the frost.
 #[cfg(target_os = "macos")]
-fn material_for(strength: &str) -> Result<Option<window_vibrancy::NSVisualEffectMaterial>, String> {
+fn material_for(strength: u8) -> Result<Option<window_vibrancy::NSVisualEffectMaterial>, String> {
     use window_vibrancy::NSVisualEffectMaterial;
 
     Ok(match strength {
-        "off" => None,
+        0 => None,
         // Deliberately not NSVisualEffectMaterial::ContentBackground: that
         // material is meant for a window's own content view and fails to
         // composite when the NSVisualEffectView is only a subview sitting
         // behind the webview, which left the window looking unblurred. Menu is
         // the lightest material that does render in that position.
-        "soft" => Some(NSVisualEffectMaterial::Menu),
-        "standard" => Some(NSVisualEffectMaterial::UnderWindowBackground),
-        "strong" => Some(NSVisualEffectMaterial::FullScreenUI),
-        other => return Err(format!("unknown window blur strength: {other}")),
+        1..=33 => Some(NSVisualEffectMaterial::Menu),
+        34..=66 => Some(NSVisualEffectMaterial::UnderWindowBackground),
+        67..=100 => Some(NSVisualEffectMaterial::FullScreenUI),
+        other => return Err(format!("window blur strength out of range: {other}")),
     })
 }
 
 /// Applies the requested backdrop blur to the calling window. No-op elsewhere.
 #[tauri::command]
-pub fn set_window_blur<R: Runtime>(
-    window: WebviewWindow<R>,
-    strength: String,
-) -> Result<(), String> {
+pub fn set_window_blur<R: Runtime>(window: WebviewWindow<R>, strength: u8) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (window, strength);
@@ -41,7 +44,7 @@ pub fn set_window_blur<R: Runtime>(
     {
         use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectState};
 
-        let material = material_for(&strength)?;
+        let material = material_for(strength)?;
         let target = window.clone();
         let (tx, rx) = std::sync::mpsc::channel();
 
