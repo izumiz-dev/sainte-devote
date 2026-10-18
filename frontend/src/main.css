@@ -43,6 +43,114 @@ body.native-titlebar #titlebar {
   display: none;
 }
 
+/*
+ * App chrome is not selectable text. Without this, dragging across a
+ * no-drag region (the command-palette trigger, the tab bar, the archive
+ * popover) highlights labels instead of moving the window. The editor and
+ * the markdown preview are deliberately left out so their text stays
+ * selectable.
+ */
+#titlebar,
+#tabbar,
+#trash-popover,
+.confirm-dialog {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Destructive-action confirmation. Rendered in the webview so it follows the
+   app theme; the archive is the only irreversible action in the UI. */
+.confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10010;
+}
+
+.confirm-dialog {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  max-width: 340px;
+  width: calc(100% - 48px);
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.dark-theme .confirm-dialog {
+  background: #1f2937;
+}
+
+.confirm-message {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  color: #374151;
+}
+
+.dark-theme .confirm-message {
+  color: #d1d5db;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.confirm-btn {
+  padding: 7px 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.confirm-btn-cancel {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.confirm-btn-cancel:hover {
+  background: #e5e7eb;
+}
+
+.dark-theme .confirm-btn-cancel {
+  background: #374151;
+  border-color: #4b5563;
+  color: #e5e7eb;
+}
+
+.dark-theme .confirm-btn-cancel:hover {
+  background: #4b5563;
+}
+
+.confirm-btn-danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.confirm-btn-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.confirm-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 #window-controls {
   display: none;
 }
@@ -356,6 +464,42 @@ body.tabs-hidden #tabbar {
   position: relative;
 }
 
+/*
+ * The strip scrolls horizontally, but its scrollbar would eat into the 40px
+ * height and fight the tab drag affordances, so it stays hidden.
+ */
+#tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Insertion marker for an in-flight tab drag: a thin accent bar sitting in the
+ * gap the tab would land in. renderer.js creates the element once and moves it
+ * by setting style.left, so it stays hidden until #tabs gets .tab-drag-active.
+ */
+.tab-drop-marker {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: #2563eb;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+  display: none;
+  z-index: 30;
+}
+
+#tabs.tab-drag-active .tab-drop-marker {
+  display: block;
+}
+
+.dark-theme .tab-drop-marker {
+  background: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
 #tabbar-actions {
   display: flex;
   align-items: center;
@@ -371,6 +515,15 @@ body.tabs-hidden #tabbar {
   display: flex;
   align-items: center;
   justify-content: center;
+  /*
+   * #tabbar-actions centers its children in the full 40px strip, but tabs are
+   * bottom-aligned and 34px tall, so the tab content center sits at 23px from
+   * the strip's top edge. Bottom-align plus a 3px margin (40 - 23 - 28/2) puts
+   * this button's center on the same line as the tab text, the close buttons
+   * and the add-tab button.
+   */
+  align-self: flex-end;
+  margin-bottom: 3px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -790,13 +943,13 @@ body.tabs-hidden #tabbar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 19px;
-  height: 19px;
+  width: 22px;
+  height: 22px;
   opacity: 0;
   transition:
     opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 5px;
+  border-radius: 6px;
   flex-shrink: 0;
   color: inherit;
   margin-left: auto;
@@ -809,7 +962,7 @@ body.tabs-hidden #tabbar {
 
 .tab:hover .close-tab-btn,
 .tab.active .close-tab-btn {
-  opacity: 0.45;
+  opacity: 0.55;
 }
 
 .close-tab-btn:hover {
@@ -833,22 +986,33 @@ body.tabs-hidden #tabbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  align-self: center;
-  width: 28px;
-  height: 28px;
-  margin: 0 4px 0 6px;
+  /*
+   * Tabs are bottom-aligned and 34px tall inside the 40px strip, so a tab's
+   * content center sits 17px above the strip's bottom edge. Centering this
+   * button in the full strip puts it 3px too high, which reads as a
+   * misaligned plus next to the tab's close button. Flex-end plus a 5px
+   * bottom margin (34/2 - 24/2) lines its center up with the tab's.
+   */
+  align-self: flex-end;
+  width: 24px;
+  height: 24px;
+  margin: 0 4px 5px 6px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 6px;
   color: #6b7280;
-  font-size: 17px;
-  font-weight: 400;
+  padding: 0;
   cursor: pointer;
   flex-shrink: 0;
   transition:
     background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
     color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-app-region: no-drag;
+}
+
+.add-tab-btn svg {
+  display: block;
+  pointer-events: none;
 }
 
 .add-tab-btn::before {
@@ -881,6 +1045,10 @@ body.tabs-hidden #tabbar {
   margin: 0;
   width: 100px;
   outline: none;
+  /* #tabbar turns off selection for chrome text; the rename field must stay
+     selectable so its select-all-on-focus keeps working. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /*

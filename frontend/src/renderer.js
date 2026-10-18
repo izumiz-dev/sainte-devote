@@ -468,11 +468,33 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           editors[tabId].setValue(content);
         }
       } else {
-        loadEditorContentIndexedDB(tabId).then((savedContent) => {
-          if (savedContent && editors[tabId]) {
-            editors[tabId].setValue(savedContent);
+        const seeded = editors[tabId];
+        const initialContent = tabData[tabId]?.content || '';
+        if (initialContent) {
+          // Seed synchronously. switchTab reads getValue() immediately after
+          // initializeEditor to render preview mode, so an async-only fill
+          // would leave the preview blank. Doing it here also means the
+          // IndexedDB read below is skipped entirely, so a late .then() can
+          // never roll back keystrokes typed right after a restore.
+          if (seeded) {
+            seeded.setValue(initialContent);
           }
-        });
+        } else {
+          // Memory is empty: fall back to the content store. `seeded` is
+          // compared by identity because tab ids are reused after a close, and
+          // a pending read from a closed tab must not write into its
+          // replacement's editor.
+          loadEditorContentIndexedDB(tabId).then((savedContent) => {
+            if (
+              savedContent &&
+              seeded &&
+              editors[tabId] === seeded &&
+              seeded.getValue() !== savedContent
+            ) {
+              seeded.setValue(savedContent);
+            }
+          });
+        }
       }
 
       editors[tabId].onDidChangeModelContent(async () => {
@@ -643,9 +665,12 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     closeBtn.classList.add('close-tab-btn');
     closeBtn.title = 'Close tab';
     closeBtn.setAttribute('aria-label', 'Close tab');
+    // 12px icon in a 1:1 viewBox so the 1px stroke lands on whole device
+    // pixels — a scaled viewBox (e.g. 9px over a 10-unit box) yields a
+    // fractional stroke that renders as an uneven, blurry X.
     closeBtn.innerHTML =
-      '<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" style="pointer-events: none; display: block;">' +
-      '<path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />' +
+      '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">' +
+      '<path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" />' +
       '</svg>';
     newTab.appendChild(closeBtn);
 
@@ -658,7 +683,14 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     newEditor.style.display = 'none';
     editorContainer.appendChild(newEditor);
     if (!filePath) {
-      saveTabData();
+      await saveTabData();
+      // Seed the content store for scratch tabs created with initial text
+      // (trash restore, cross-window transfer, startup restore). Without this
+      // the text only ever lived in tabData, so initializeEditor's IndexedDB
+      // read returned "" and the editor came up empty.
+      if (content) {
+        await saveEditorContentIndexedDB(tabId, content);
+      }
     }
 
     if (isPreview) {
@@ -1676,14 +1708,14 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           // can close it. Await the replacement so updateWindowTitle below
           // sees the new tab's title instead of a stale count.
           if (!options.allowEmpty) {
+            // Closing the only tab — an empty scratch tab nobody ever typed
+            // into — leaves this window with nothing to show, so close the
+            // window instead of spawning a replacement. This covers the
+            // single-window case too, where it used to quietly pop open a new
+            // "Untitled" tab.
             if (isEmptyScratchTab && !options.skipConfirm) {
-              const hasOtherWindows = await window.electron
-                .invoke('has-other-windows')
-                .catch(() => false);
-              if (hasOtherWindows) {
-                await discardWorkspaceAndCloseWindow();
-                return;
-              }
+              await discardWorkspaceAndCloseWindow();
+              return;
             }
             await addTab();
           }
@@ -1703,6 +1735,82 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const trashList = document.getElementById('trash-list');
   const trashClearAll = document.getElementById('trash-clear-all');
   const trashClose = document.getElementById('trash-close');
+
+  // Removing something from the archive is irreversible, so those two actions
+  // ask first. Built from the renderer (rather than a native dialog) so it
+  // follows the app theme and needs no extra Tauri capability.
+  function showConfirmDialog(message, confirmLabel = 'Delete') {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+
+      const dialog = document.createElement('div');
+      dialog.className = 'confirm-dialog';
+      dialog.setAttribute('role', 'alertdialog');
+      dialog.setAttribute('aria-modal', 'true');
+
+      const messageEl = document.createElement('p');
+      messageEl.className = 'confirm-message';
+      messageEl.textContent = message;
+
+      const actions = document.createElement('div');
+      actions.className = 'confirm-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'confirm-btn confirm-btn-cancel';
+      cancelBtn.textContent = 'Cancel';
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.className = 'confirm-btn confirm-btn-danger';
+      confirmBtn.textContent = confirmLabel;
+
+      const finish = (value) => {
+        document.removeEventListener('keydown', handleKeydown, true);
+        overlay.remove();
+        resolve(value);
+      };
+
+      // Capture phase + stopPropagation so this dialog owns the keyboard while
+      // it is open: Escape must not also reach the global handler that hides
+      // the archive popover, and app shortcuts must not act on the tab sitting
+      // behind the dialog. Tab is left alone so focus can still move.
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          finish(false);
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          finish(document.activeElement !== cancelBtn);
+        } else if (event.key !== 'Tab') {
+          event.stopPropagation();
+        }
+      };
+
+      cancelBtn.addEventListener('click', () => finish(false));
+      confirmBtn.addEventListener('click', () => finish(true));
+      overlay.addEventListener('click', (event) => {
+        // The dialog is a child of <body>, so a click here would otherwise
+        // reach the global document handler that hides the archive popover —
+        // cancelling has to leave the popover open.
+        event.stopPropagation();
+        if (event.target === overlay) finish(false);
+      });
+      document.addEventListener('keydown', handleKeydown, true);
+
+      actions.appendChild(cancelBtn);
+      actions.appendChild(confirmBtn);
+      dialog.appendChild(messageEl);
+      dialog.appendChild(actions);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+      // Cancel is the default so an accidental Enter is not destructive.
+      cancelBtn.focus();
+    });
+  }
 
   function formatRelativeTime(timestamp) {
     if (!timestamp) return '';
@@ -1813,6 +1921,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   if (trashClearAll) {
     trashClearAll.addEventListener('click', async () => {
       if (!db) return;
+      const items = await workspaceStore.listTrash(db);
+      if (items.length === 0) return;
+      const confirmed = await showConfirmDialog(
+        `Permanently delete all ${items.length} archived tab${
+          items.length === 1 ? '' : 's'
+        }?\n\nThis cannot be undone.`,
+        items.length === 1 ? 'Delete' : 'Delete All',
+      );
+      if (!confirmed) return;
       await workspaceStore.clearTrash(db);
       await updateTrashUI();
     });
@@ -1835,6 +1952,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         await updateTrashUI();
         hideTrashPopover();
       } else if (action === 'delete') {
+        const confirmed = await showConfirmDialog(
+          'Permanently delete this archived tab?\n\nThis cannot be undone.',
+        );
+        if (!confirmed) return;
         await workspaceStore.deleteTrashItem(db, itemId);
         await updateTrashUI();
       }
@@ -2292,13 +2413,35 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   async function updatePaletteResults() {
     const rawQuery = paletteInput.value.toLowerCase().trim();
     const keywords = rawQuery.split(/\s+/).filter(k => k.length > 0);
-    const results = [];
 
     const isMatch = (text) => {
       if (keywords.length === 0) return true;
       const lowerText = text.toLowerCase();
       return keywords.every(k => lowerText.includes(k));
     };
+
+    // Group words ("archive", "trash", "restore", "recent") exist so a whole
+    // category can be summoned on purpose. Each is matched as its own token of
+    // at least three characters: they all contain "a", "e" and "r", so testing
+    // them with the substring matcher above dumped the entire category into
+    // the list as soon as one letter was typed and pushed the real matches out
+    // of the capped result list.
+    const isCategory = (...words) =>
+      keywords.some(k => k.length >= 3 && words.some(w => w.startsWith(k)));
+
+    // A single character matches nearly any document, so content search waits
+    // for a second one. Same rule the current-tab search below applies.
+    const searchContent =
+      keywords.length > 0 && !(keywords.length === 1 && keywords[0].length < 2);
+
+    // Groups are collected separately and concatenated in relevance order at
+    // the end: the list is capped at 15 entries, so whatever is appended last
+    // can be pushed out of view entirely.
+    const commandHits = [];
+    const tabHits = [];
+    const contentHits = [];
+    const recentHits = [];
+    const archiveHits = [];
 
     const staticCommands = [
       { id: 'new-tab', type: 'command', label: 'New Tab', detail: 'Create a new markdown tab', icon: icons.plus, action: () => addTab() },
@@ -2319,7 +2462,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       { id: 'save', type: 'command', label: 'Save', detail: 'Save the current tab', icon: icons.save, action: () => saveCurrentTab() },
       { id: 'save-as', type: 'command', label: 'Save As', detail: 'Save the current tab to a file', icon: icons.save, action: () => saveAsCurrentTab() },
       {
-        id: 'close-tab', type: 'command', label: 'Close Tab', detail: 'Close the current tab', icon: icons.trash, action: () => {
+        id: 'close-tab', type: 'command', label: 'Close Tab', detail: 'Close the current tab (a scratch tab with text moves to the archive)', icon: icons.archive, action: () => {
           if (currentTab) {
             setTimeout(() => closeTab(currentTab), 200);
           }
@@ -2336,12 +2479,28 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
         },
       },
       {
-        id: 'delete-tab', type: 'command', label: 'Delete Tab', detail: 'Close and delete the current tab', icon: icons.trash, action: () => {
-          if (currentTab) {
-            setTimeout(() => {
-              closeTab(currentTab);
-            }, 200);
-          }
+        id: 'delete-tab', type: 'command', label: 'Delete Tab', detail: 'Close the current tab without archiving it', icon: icons.trash, action: () => {
+          if (!currentTab) return;
+          // Capture the target now: the timeout only exists to let the palette
+          // close, and the user meant this tab, not whatever is focused later.
+          const tabId = currentTab;
+          setTimeout(async () => {
+            const tab = tabData[tabId];
+            if (!tab) return;
+            // Deleting is the one tab action that skips the archive, so it is
+            // also the only one that asks before throwing content away.
+            const content = tab.filePath
+              ? ''
+              : editors[tabId]?.getValue() ?? tab.content ?? '';
+            if (content.trim().length > 0) {
+              const confirmed = await showConfirmDialog(
+                `Delete "${tab.title || 'Untitled'}"?\n\nThis scratch tab will be permanently deleted instead of being archived.`,
+                'Delete',
+              );
+              if (!confirmed) return;
+            }
+            await closeTab(tabId, { skipTrash: true });
+          }, 200);
         }
       },
       {
@@ -2369,15 +2528,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     staticCommands.forEach(cmd => {
       if (isMatch(cmd.label)) {
-        results.push(cmd);
+        commandHits.push(cmd);
       }
     });
 
     const recentFiles = await loadRecentFiles();
     recentFiles.forEach(filePath => {
       const fileName = getFileNameFromPath(filePath);
-      if (isMatch(fileName) || isMatch('recent')) {
-        results.push({
+      if (isMatch(fileName) || isCategory('recent')) {
+        recentHits.push({
           id: `recent-${filePath}`,
           type: 'command',
           label: `Recent: ${fileName}`,
@@ -2390,18 +2549,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     });
 
-    if (db) {
+    // An empty query is the "jump somewhere" case rather than a browse-the-
+    // archive one, so the archive stays out of it and the IndexedDB read is
+    // skipped as well.
+    if (db && keywords.length > 0) {
       const trashItems = await workspaceStore.listTrash(db);
       trashItems.forEach((item) => {
         const title = item.title || 'Untitled';
         if (
           isMatch(title) ||
-          isMatch('trash') ||
-          isMatch('archive') ||
-          isMatch('restore') ||
-          (item.content && isMatch(item.content))
+          isCategory('archive', 'trash', 'restore') ||
+          (searchContent && item.content && isMatch(item.content))
         ) {
-          results.push({
+          archiveHits.push({
             id: `trash-${item.id}`,
             type: 'command',
             label: `Restore: ${title}`,
@@ -2425,7 +2585,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       recentTabs.forEach(id => {
         const data = tabData[id];
         if (data) {
-          results.push({
+          tabHits.push({
             id: `tab-${id}`,
             type: 'tab',
             label: `Opened Recently: ${data.title}`,
@@ -2438,7 +2598,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     } else {
       Object.entries(tabData).forEach(([id, data]) => {
         if (isMatch(data.title)) {
-          results.push({
+          tabHits.push({
             id: `tab-${id}`,
             type: 'tab',
             label: `Jump to Tab: ${data.title}`,
@@ -2450,7 +2610,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       });
     }
 
-    if (keywords.length > 0 && !(keywords.length === 1 && keywords[0].length < 2)) {
+    if (searchContent) {
       for (const [id, data] of Object.entries(tabData)) {
         const tabId = Number(id);
         let content = '';
@@ -2465,7 +2625,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           const lines = content.split('\n');
           lines.forEach((line, index) => {
             if (isMatch(line)) {
-              results.push({
+              contentHits.push({
                 id: `search-${tabId}-${index}`,
                 type: 'search',
                 label: data.title,
@@ -2491,7 +2651,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       }
     }
 
-    currentResults = results.slice(0, 15);
+    // The list is capped at 15 entries, so the assembly order decides who
+    // survives the cut. With an empty query the usable targets come first:
+    // switching to a tab that is already open is the most common reason to
+    // open the palette, and every command is also reachable from the menu bar,
+    // which is why recent files are ahead of them here and jump-to-tab results
+    // are ahead of everything once a query is typed.
+    const ordered =
+      keywords.length === 0
+        ? [...tabHits, ...recentHits, ...commandHits]
+        : [...commandHits, ...tabHits, ...contentHits, ...recentHits, ...archiveHits];
+
+    currentResults = ordered.slice(0, 15);
     renderPaletteResults();
   }
 
