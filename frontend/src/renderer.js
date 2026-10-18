@@ -973,25 +973,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     }
 
     contextMenu = document.createElement('div');
-    contextMenu.style.cssText = `
-      position: fixed;
-      left: ${x}px;
-      top: ${y}px;
-      background: white;
-      border: 1px solid #d1d5db;
-      border-radius: 6px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      z-index: 10000;
-      min-width: 180px;
-      padding: 4px 0;
-      font-size: 13px;
-    `;
-
-    if (document.body.classList.contains('dark-theme')) {
-      contextMenu.style.background = '#1f2937';
-      contextMenu.style.borderColor = '#374151';
-      contextMenu.style.color = '#f9fafb';
-    }
+    contextMenu.className = 'tab-context-menu';
+    contextMenu.style.left = `${x}px`;
+    contextMenu.style.top = `${y}px`;
 
     const menuItems = [
       {
@@ -1018,25 +1002,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     menuItems.forEach(item => {
       const menuItem = document.createElement('div');
-      menuItem.style.cssText = `
-        padding: 8px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: background-color 0.15s ease;
-      `;
-
+      menuItem.className = 'tab-context-menu-item';
       menuItem.innerHTML = `<span>${item.icon}</span><span>${item.text}</span>`;
-
-      menuItem.addEventListener('mouseenter', () => {
-        menuItem.style.backgroundColor = document.body.classList.contains('dark-theme')
-          ? '#374151' : '#f3f4f6';
-      });
-
-      menuItem.addEventListener('mouseleave', () => {
-        menuItem.style.backgroundColor = 'transparent';
-      });
 
       menuItem.addEventListener('click', () => {
         item.action();

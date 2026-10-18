@@ -1217,6 +1217,65 @@ body.dark-theme.window-translucent .monaco-component {
 }
 
 /*
+ * The tab context menu is the loader's own DOM menu (Copy to Clipboard / Save
+ * as Markdown / Open in New Window) rather than a Monaco widget, so it needs
+ * the same treatment by hand: opaque while the window is, a low-alpha tint of
+ * the same hue once it is see-through. It keeps more opacity than the surfaces
+ * underneath (which carry --window-alpha) because a floating menu has to stay
+ * readable over whatever it covers.
+ */
+.tab-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 180px;
+  padding: 4px 0;
+  font-size: 13px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.tab-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tab-context-menu-item:hover {
+  background-color: #f3f4f6;
+}
+
+body.dark-theme .tab-context-menu {
+  background: #1f2937;
+  border-color: #374151;
+  color: #f9fafb;
+}
+
+body.dark-theme .tab-context-menu-item:hover {
+  background-color: #374151;
+}
+
+body.window-translucent .tab-context-menu {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+body.window-translucent .tab-context-menu-item:hover {
+  background-color: rgba(243, 244, 246, 0.7);
+}
+
+body.dark-theme.window-translucent .tab-context-menu {
+  background: rgba(31, 41, 55, 0.7);
+}
+
+body.dark-theme.window-translucent .tab-context-menu-item:hover {
+  background-color: rgba(55, 65, 81, 0.7);
+}
+
+/*
  * A transparent window loses macOS's own hairline border, so the window edge
  * dissolves into whatever is behind it. Draw an equivalent frame ourselves;
  * the radius matches the window's rounded corners. renderer.js adds this class
