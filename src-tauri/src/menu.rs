@@ -67,6 +67,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
 
+    #[allow(unused_mut)]
     let mut window_builder = SubmenuBuilder::new(app, "Window").minimize().maximize();
     #[cfg(target_os = "macos")]
     {

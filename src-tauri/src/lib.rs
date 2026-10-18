@@ -10,6 +10,8 @@ mod menu;
 mod session;
 mod settings;
 mod validate;
+#[cfg(windows)]
+mod win_drag_drop;
 mod window_registry;
 
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -208,12 +210,12 @@ fn open_recent_file(
 }
 
 #[tauri::command]
-fn open_new_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
+async fn open_new_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
     session::create_editor_window(&app, Some(window.label().to_string()))
 }
 
 #[tauri::command]
-fn open_new_window_with_tab(
+async fn open_new_window_with_tab(
     app: AppHandle,
     window: tauri::WebviewWindow,
     tab_id: i64,
@@ -361,6 +363,7 @@ pub fn run() {
                 if let Err(error) = window.set_decorations(false) {
                     eprintln!("failed to disable window decorations: {error}");
                 }
+                win_drag_drop::install(window);
             }
 
             Ok(())
@@ -401,6 +404,8 @@ pub fn run() {
             }
             WindowEvent::Destroyed => {
                 let label = window.label().to_string();
+                #[cfg(windows)]
+                win_drag_drop::cleanup(&label);
                 let app = window.app_handle();
                 app.state::<WindowRegistryState>()
                     .lock()

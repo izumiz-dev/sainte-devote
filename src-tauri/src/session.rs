@@ -192,7 +192,10 @@ fn build_editor_window<R: Runtime>(
             }
         }
     }
-    builder.build().map_err(|error| error.to_string())
+    let window = builder.build().map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    crate::win_drag_drop::install(&window);
+    Ok(window)
 }
 
 fn cascade_position<R: Runtime>(anchor: &WebviewWindow<R>) -> Option<(f64, f64)> {
@@ -320,6 +323,7 @@ pub fn open_argv<R: Runtime>(app: &AppHandle<R>, argv: &[String], cwd: &Path) ->
     raised
 }
 
+#[allow(dead_code)]
 pub fn open_user_paths<R: Runtime>(app: &AppHandle<R>, paths: &[PathBuf]) {
     let requested = {
         let registry_state = app.state::<WindowRegistryState>();
@@ -346,6 +350,9 @@ pub fn open_user_paths<R: Runtime>(app: &AppHandle<R>, paths: &[PathBuf]) {
 }
 
 pub fn on_renderer_ready<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
+    #[cfg(windows)]
+    crate::win_drag_drop::install(window);
+
     let label = window.label().to_string();
     let flush = app
         .state::<WindowRegistryState>()
@@ -355,7 +362,6 @@ pub fn on_renderer_ready<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<
         app.state::<ActiveFilePathsState>().revoke_window(&label);
         app.state::<ExternalFileSyncState>().unwatch_window(&label);
     }
-    emit_monaco_settings(app, window);
     for tab in flush.tabs {
         ipc::emit_to_window(
             app,
@@ -370,6 +376,7 @@ pub fn on_renderer_ready<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<
             }),
         );
     }
+    emit_monaco_settings(app, window);
     let mut seen = std::collections::HashSet::new();
     for PendingOpen { path, grant_write } in flush.pending {
         if !seen.insert(path.clone()) {

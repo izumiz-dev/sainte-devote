@@ -2856,6 +2856,8 @@ dependencies = [
  "tempfile",
  "time",
  "url",
+ "windows",
+ "windows-core 0.61.2",
  "zip",
 ]
 
