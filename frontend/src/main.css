@@ -1102,15 +1102,18 @@ body.tabs-hidden #tabbar {
 }
 
 /*
- * Once the editor surface is see-through, WKWebView's focus ring around the
- * focused editor container shows up as a stray 1px rectangle floating inside
- * the window. The caret and the selection already convey focus here.
+ * Monaco's own editor.main.css paints `outline: 1px solid
+ * var(--vscode-focusBorder)` on every `.monaco-editor` root, so the editor
+ * carries a stray theme-coloured rectangle around it. That stylesheet is
+ * injected by the AMD loader *after* this file, so a plain `outline: none`
+ * loses the cascade tie and the ring stays; the caret, the selection and the
+ * tab strip already show where focus is.
  */
 #editor-container,
 .editor,
 .monaco-editor,
 .monaco-editor .overflow-guard {
-  outline: none;
+  outline: none !important;
 }
 
 /*
