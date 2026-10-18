@@ -12,9 +12,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# macos-private-api is required for transparent windows (the Window Opacity /
-# Window Blur settings). It is also injected by the Tauri CLI, but listing it
-# here keeps plain `cargo check` builds correct.
+# macos-private-api is what makes the transparent window possible (the Window
+# Opacity / Window Blur settings). It is also injected by the Tauri CLI, but
+# listing it here keeps plain `cargo check` builds correct. Cargo resolves
+# features without looking at the target, so the feature stays enabled on every
+# platform - which is why tauri.conf.json declares macOSPrivateApi as well: the
+# Tauri build script rejects a mismatch on any platform, including Linux and
+# Windows, where the flag itself does nothing. See tauri.macos.conf.json for the
+# transparent window it unlocks.
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
