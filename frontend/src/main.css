@@ -1191,6 +1191,32 @@ body.window-translucent .monaco-editor .current-line {
 }
 
 /*
+ * Monaco paints its own widgets from theme colours that are opaque by design,
+ * so the context menu, the find widget and the editor hovers show up as solid
+ * black slabs on a see-through window. Tint them like the preview panels
+ * instead: a fixed low-alpha fill of the same hue, independent of
+ * --window-alpha, so the frosted backdrop shows through while text keeps its
+ * contrast. Hover and selection colours stay theme-driven.
+ */
+body.window-translucent .monaco-editor,
+body.window-translucent .monaco-component {
+  --vscode-editorWidget-background: rgba(243, 243, 243, 0.7);
+  --vscode-editorHoverWidget-background: rgba(255, 255, 255, 0.7);
+  --vscode-editorSuggestWidget-background: rgba(243, 243, 243, 0.7);
+  --vscode-menu-background: rgba(255, 255, 255, 0.7);
+  --vscode-menu-selectionBackground: rgba(0, 96, 192, 0.8);
+}
+
+body.dark-theme.window-translucent .monaco-editor,
+body.dark-theme.window-translucent .monaco-component {
+  --vscode-editorWidget-background: rgba(37, 37, 38, 0.7);
+  --vscode-editorHoverWidget-background: rgba(37, 37, 38, 0.7);
+  --vscode-editorSuggestWidget-background: rgba(37, 37, 38, 0.7);
+  --vscode-menu-background: rgba(60, 60, 60, 0.7);
+  --vscode-menu-selectionBackground: rgba(9, 71, 113, 0.8);
+}
+
+/*
  * A transparent window loses macOS's own hairline border, so the window edge
  * dissolves into whatever is behind it. Draw an equivalent frame ourselves;
  * the radius matches the window's rounded corners. renderer.js adds this class

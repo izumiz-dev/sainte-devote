@@ -1992,7 +1992,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     previewFontFamily: '', // '' = use github-markdown-css default
     previewFontSize: 0, // 0 = use github-markdown-css default
     windowOpacity: 1, // 0.3 - 1; only applied on macOS
-    windowBlur: 0, // 0 = off, 1-100 = how much of the native frost shows through
+    windowBlur: 'off', // 'off' | 'low' | 'high'; only applied on macOS
   };
 
   // Window transparency is handled entirely in CSS: Monaco paints an opaque
@@ -2003,17 +2003,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const WINDOW_ALPHA_MAX = 1;
   // A vibrancy material is itself nearly opaque, so once blur is on the app's
   // own surfaces have to step aside or they hide the frost and the window
-  // looks opaque again. The slider still tints whatever is left.
+  // looks opaque again. How far they step aside is what tells the two blur
+  // stages apart: 'low' keeps a good layer of the window's own colour in front
+  // of the frost, 'high' lets the frosted backdrop be the window with only a
+  // thin tint over it.
   //
   // macOS fixes the blur radius per NSVisualEffectMaterial and exposes no
-  // numeric radius, so the slider cannot change how hard the backdrop is
-  // blurred. The dial that *is* continuous is how much of the app's own surface
-  // stays in front of the frost: at 1 the app colour dominates with a hint of
-  // blur behind it, at 100 the frost is the window and the app colour is a thin
-  // tint over it. The floor keeps body text readable, because the backdrop is a
-  // wallpaper rather than a flat colour.
-  const BLUR_VEIL_MAX = 0.85;
-  const BLUR_VEIL_MIN = 0.18;
+  // numeric radius (NSGlassEffectView on macOS 26 adds no radius either), so a
+  // slider would only ever move this veil, which reads as "the blur is not
+  // changing" rather than as an adjustment. Two named stages it is. The floor
+  // keeps body text readable, because the backdrop is a wallpaper rather than a
+  // flat colour.
+  const BLUR_SURFACE_FACTORS = { off: 1, low: 0.6, high: 0.18 };
 
   // Curated font presets. value '' means "use the built-in default".
   const FONT_PRESETS = {
@@ -2123,27 +2124,19 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     return Math.min(WINDOW_ALPHA_MAX, Math.max(WINDOW_ALPHA_MIN, numeric));
   }
 
-  // Blur was a four-preset segment before it became a slider, so an old
-  // settings blob may still carry 'off' or 'soft'.
-  const LEGACY_BLUR_VALUES = { off: 0, soft: 33, standard: 66, strong: 100 };
-
-  function clampWindowBlur(value) {
-    if (typeof value === 'string' && value in LEGACY_BLUR_VALUES) {
-      return LEGACY_BLUR_VALUES[value];
-    }
+  // Blur has been a 0-100 slider and, before that, four named presets, so a
+  // stored value from either era has to fold back onto the two stages.
+  function normalizeWindowBlur(value) {
+    if (value in BLUR_SURFACE_FACTORS) return value;
+    if (value === 'strong') return 'high';
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 0;
-    return Math.min(100, Math.max(0, Math.round(numeric)));
+    if (!Number.isFinite(numeric) || numeric <= 0) return 'off';
+    return numeric <= 50 ? 'low' : 'high';
   }
 
-  // How much of the app's own surface stays in front of the native frost. macOS
-  // fixes the blur radius per material, so this veil is the continuous part of
-  // the slider: at the bottom the app colour dominates with a hint of blur
-  // behind it, at the top the frost owns the window.
+  // How much of the app's own surface stays in front of the native frost.
   function blurSurfaceFactor() {
-    const blur = clampWindowBlur(userSettings.windowBlur);
-    if (blur === 0) return 1;
-    return BLUR_VEIL_MAX + (BLUR_VEIL_MIN - BLUR_VEIL_MAX) * ((blur - 1) / 99);
+    return BLUR_SURFACE_FACTORS[normalizeWindowBlur(userSettings.windowBlur)];
   }
 
   // Windows are only created transparent on macOS, so everywhere else the
@@ -2164,22 +2157,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     document.documentElement.style.setProperty('--window-alpha', String(alpha));
   }
 
-  // The vibrancy material has to be swapped natively, and the slider fires on
-  // every pixel of drag; clear+apply per event would flicker, so the CSS veil
-  // follows immediately and the material settles shortly after.
-  let blurCommitTimer = null;
-
-  function scheduleWindowBlur() {
-    if (blurCommitTimer) clearTimeout(blurCommitTimer);
-    blurCommitTimer = setTimeout(() => {
-      blurCommitTimer = null;
-      applyWindowBlur();
-    }, 120);
-  }
-
   function applyWindowBlur() {
     if (!isMacPlatform()) return;
-    window.electron.send('set-window-blur', { strength: clampWindowBlur(userSettings.windowBlur) });
+    window.electron.send('set-window-blur', {
+      strength: normalizeWindowBlur(userSettings.windowBlur),
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -2197,8 +2179,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const windowOpacityInput = document.getElementById('settings-window-opacity');
   const windowOpacityValue = document.getElementById('settings-window-opacity-value');
   const windowBlurGroup = document.getElementById('settings-window-blur-group');
-  const windowBlurInput = document.getElementById('settings-window-blur');
-  const windowBlurValue = document.getElementById('settings-window-blur-value');
+  const windowBlurSegment = document.getElementById('settings-window-blur');
 
   function populateFontPresets() {
     const fill = (select, presets) => {
@@ -2240,9 +2221,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     const opacityPercent = Math.round(clampWindowOpacity(userSettings.windowOpacity) * 100);
     windowOpacityInput.value = opacityPercent;
     windowOpacityValue.textContent = `${opacityPercent}%`;
-    const blurAmount = clampWindowBlur(userSettings.windowBlur);
-    windowBlurInput.value = blurAmount;
-    windowBlurValue.textContent = blurAmount === 0 ? 'Off' : `${blurAmount}%`;
+    const blur = normalizeWindowBlur(userSettings.windowBlur);
+    windowBlurSegment.querySelectorAll('button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.blur === blur);
+    });
   }
 
   function showSettings() {
@@ -2323,14 +2305,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     applyWindowOpacity();
   });
 
-  windowBlurInput.addEventListener('input', () => {
-    userSettings.windowBlur = clampWindowBlur(parseInt(windowBlurInput.value, 10));
-    windowBlurValue.textContent =
-      userSettings.windowBlur === 0 ? 'Off' : `${userSettings.windowBlur}%`;
+  windowBlurSegment.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-blur]');
+    if (!btn) return;
+    userSettings.windowBlur = btn.dataset.blur;
     saveSettings();
     // Blur owns the backdrop while it is on, so the surfaces have to follow.
     applyWindowOpacity();
-    scheduleWindowBlur();
+    applyWindowBlur();
+    syncSettingsForm();
   });
 
   document.getElementById('settings-reset').addEventListener('click', () => {
