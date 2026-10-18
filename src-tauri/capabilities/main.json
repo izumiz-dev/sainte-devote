@@ -4,8 +4,10 @@
   "description": "Permissions granted to editor windows. Keep this minimal: it is the Tauri equivalent of preload.js's IPC channel allowlist.",
   "windows": ["main", "editor-*"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close"
