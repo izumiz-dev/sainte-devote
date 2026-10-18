@@ -383,6 +383,54 @@ body.preview-mode #mode-toggle-btn .icon-edit {
   background-color: rgba(13, 17, 23, var(--window-alpha));
 }
 
+/*
+ * Code blocks and tables are the only surfaces the vendor markdown CSS fills
+ * with opaque colours, so on a translucent window they read as solid tiles
+ * pasted over the vibrancy. Repaint them as low-alpha tints instead: each one
+ * becomes a slightly recessed (light) or lifted (dark) region of the same
+ * material, stays defined at any window opacity, and still looks the same at
+ * 100%. The tints are deliberately independent of --window-alpha so the panel
+ * does not fade twice, and a hairline inset ring replaces the vendor's hard
+ * edge without changing the box size.
+ */
+#preview pre {
+  background-color: rgba(0, 0, 0, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+#preview table tr {
+  background-color: transparent;
+}
+
+#preview table tr:nth-child(2n) {
+  background-color: rgba(0, 0, 0, 0.028);
+}
+
+#preview table th {
+  background-color: rgba(0, 0, 0, 0.045);
+}
+
+#preview kbd {
+  background-color: rgba(0, 0, 0, 0.035);
+}
+
+body.dark-theme #preview pre {
+  background-color: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+body.dark-theme #preview table tr:nth-child(2n) {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+body.dark-theme #preview table th {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+body.dark-theme #preview kbd {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
 body.preview-mode #preview {
   display: block !important;
   flex: 1;
