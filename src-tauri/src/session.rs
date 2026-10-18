@@ -183,16 +183,27 @@ pub fn create_editor_window_with_tab<R: Runtime>(
         return Err("window does not own the dragged file".to_string());
     }
 
+    let normalized_file = match file_path {
+        Some(path) => {
+            // Check readability BEFORE creating the target window or releasing
+            // the source window's claim: if the file was deleted or replaced
+            // with a symlink, leave the tab in its source window untouched.
+            let normalized = normalize_owned_path(Path::new(path), &current_dir());
+            files::read_file_content(&normalized)?;
+            Some((path, normalized))
+        }
+        None => None,
+    };
+
     let label = create_editor_window(app, anchor)?;
 
-    match file_path {
-        Some(path) => {
+    match normalized_file {
+        Some((path, normalized)) => {
             // Hand the file over first, otherwise open_one routes it straight
             // back to the window we are taking it from. route_open queues
             // while the new window is still booting, and on_renderer_ready
             // flushes it. Preserve the source window's write grant so a
             // read-only (recent-file) tab stays read-only after detaching.
-            let normalized = normalize_owned_path(Path::new(path), &current_dir());
             let grant_write = app
                 .state::<ActiveFilePathsState>()
                 .is_granted(&normalized, source_label);

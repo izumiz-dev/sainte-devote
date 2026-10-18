@@ -119,8 +119,9 @@ integration. There is no Node runtime in the shipped app.
   sanitization and dependencies actively, as arbitrary script execution in the
   webview would directly reach allowlisted IPC commands.
 - Tab hand-offs (`begin_tab_drag`, detach into new window) must be backed by
-  window file ownership (`owns_path`) so a renderer cannot mint write grants
-  for arbitrary paths.
+  window file ownership (`owns_path`) and preserve the source window's
+  `ActiveFilePathsState` grant so a renderer cannot mint write grants for
+  arbitrary paths or escalate a read-only tab to writable.
 
 ## Runtime subtleties
 
