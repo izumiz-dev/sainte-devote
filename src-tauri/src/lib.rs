@@ -12,6 +12,7 @@ mod settings;
 mod validate;
 #[cfg(windows)]
 mod win_drag_drop;
+mod window_effects;
 mod window_registry;
 
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -340,6 +341,7 @@ pub fn run() {
             close_window_cancelled,
             has_other_windows,
             broadcast_settings,
+            window_effects::set_window_blur,
             export::export_tabs_data
         ])
         .setup(|app| {

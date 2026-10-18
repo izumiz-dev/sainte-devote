@@ -63,6 +63,7 @@
     'close-window-confirmed': 'close_window_confirmed',
     'close-window-cancelled': 'close_window_cancelled',
     'broadcast-settings': 'broadcast_settings',
+    'set-window-blur': 'set_window_blur',
   };
 
   // Same bare-arg wrapping as above, but for send() channels.
