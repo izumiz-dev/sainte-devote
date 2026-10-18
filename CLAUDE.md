@@ -19,8 +19,8 @@ Sainte Devote is a single-window Tauri 2 Markdown editor. Monaco Editor and the
 existing renderer run in the OS WebView, while Rust owns filesystem and OS
 integration.
 
-- `src-tauri/src/lib.rs`: Tauri setup, managed state, startup file queue, and
-  window events.
+- `src-tauri/src/lib.rs`: Tauri setup, managed state, Tauri commands, and
+  window / app event handling (including the macOS app lifecycle).
 - `src-tauri/src/session.rs`: open/save/autosave flows, window creation, and
   native drag-and-drop resolution.
 - `src-tauri/src/window_registry.rs`: window labels and roles, per-window
@@ -62,7 +62,14 @@ integration.
 - Register and manage `ExternalFileSyncState` at the start of `.setup()` before
   any pending file-open flush can use it.
 - Renderer listeners are installed only after Monaco finishes loading. Queue
-  startup opens until the renderer emits `renderer-ready`.
+  startup opens per window (`WindowRegistry::pending_opens`) until the renderer
+  emits `renderer-ready`.
+- On macOS, closing the last window leaves the app running: the `ExitRequested`
+  handler calls `prevent_exit()` for that interaction case only, so Cmd+Q and the
+  Quit menu item still go through. A file opened in that windowless state has no
+  window to route to, so it reserves one, queues the paths, and builds the window
+  asynchronously. A Dock click (`Reopen`) restores the windows that still exist
+  rather than stacking another one.
 - Recent-files opens remain read-only.
 - Run through `pnpm tauri:dev`; launching the debug binary directly does not use
   the Tauri CLI frontend server.

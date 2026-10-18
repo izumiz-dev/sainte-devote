@@ -70,20 +70,67 @@ pub fn create_editor_window<R: Runtime>(
         .allocate_editor()
         .map_err(str::to_string)?;
 
-    match build_editor_window(app, &label, anchor) {
+    build_reserved_editor_window(app, &label, anchor)
+}
+
+/// Build the window for a label `allocate_editor` already reserved. Splitting
+/// reservation from construction lets a caller queue work against the window
+/// before it exists, which is what a file open needs when there is no window to
+/// route to yet.
+pub fn build_reserved_editor_window<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    anchor: Option<String>,
+) -> Result<String, String> {
+    match build_editor_window(app, label, anchor) {
         Ok(window) => {
             app.state::<WindowRegistryState>()
                 .lock()
                 .note_focus(window.label());
-            Ok(label)
+            Ok(label.to_string())
         }
         Err(error) => {
             app.state::<WindowRegistryState>()
                 .lock()
-                .destroy_window(&label);
+                .destroy_window(label);
             Err(error)
         }
     }
+}
+
+/// Open files from an app that is running with no window at all (macOS keeps
+/// the process alive after the last window closes).
+///
+/// `route_open` silently drops an open aimed at a label that does not exist, so
+/// the window is reserved first, the paths are queued against it, and only then
+/// is the window built — creation has to stay off the event loop thread or the
+/// runtime channel deadlocks. `on_renderer_ready` drains the queue once the
+/// renderer boots, exactly like a startup open.
+pub fn spawn_editor_window_for_paths<R: Runtime>(app: &AppHandle<R>, paths: &[PathBuf]) {
+    // Read the anchor before reserving, so the lookup cannot pick the label we
+    // are about to create.
+    let anchor = app.state::<WindowRegistryState>().lock().menu_target();
+    let label = match app.state::<WindowRegistryState>().lock().allocate_editor() {
+        Ok(label) => label,
+        Err(error) => {
+            eprintln!("cannot open files without a window: {error}");
+            return;
+        }
+    };
+
+    for path in paths {
+        if let OpenOutcome::Rejected(error) = open_one(app, path, &label, true, EmitPolicy::Always)
+        {
+            eprintln!("skipping {}: {error}", path.display());
+        }
+    }
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = build_reserved_editor_window(&app, &label, anchor) {
+            eprintln!("failed to create window: {error}");
+        }
+    });
 }
 
 /// Create a new editor window and hand it a tab: a file re-opened through the

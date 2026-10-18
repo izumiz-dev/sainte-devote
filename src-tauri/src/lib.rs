@@ -276,14 +276,6 @@ fn close_window_cancelled(window: tauri::WebviewWindow, registry: State<'_, Wind
 }
 
 #[tauri::command]
-fn has_other_windows(
-    window: tauri::WebviewWindow,
-    registry: State<'_, WindowRegistryState>,
-) -> bool {
-    registry.lock().has_other_alive_windows(window.label())
-}
-
-#[tauri::command]
 fn broadcast_settings(
     window: tauri::WebviewWindow,
     settings: serde_json::Value,
@@ -338,7 +330,6 @@ pub fn run() {
             claim_workspaces,
             close_window_confirmed,
             close_window_cancelled,
-            has_other_windows,
             broadcast_settings,
             export::export_tabs_data
         ])
@@ -431,12 +422,75 @@ pub fn run() {
             }
 
             #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                // macOS convention: closing the last window leaves the app
+                // running with its Dock icon, so an empty window list must not
+                // end the process. Only the interaction case (every window
+                // closed, code == None) is held back — an explicit quit
+                // (Cmd+Q or the Quit menu item) carries a code and has to go
+                // through.
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = &event
+            {
+                // AppKit only counts windows that are on screen, so a window
+                // that was miniaturized into the Dock reports as "not visible".
+                // Bring back whatever still exists instead of stacking a
+                // second window on top of it; only a genuinely empty app gets
+                // a new one. ("New Window" in the File menu is the other way
+                // back from a windowless app.)
+                if !has_visible_windows {
+                    let windows = app_handle.webview_windows();
+                    if windows.is_empty() {
+                        let anchor = app_handle
+                            .state::<WindowRegistryState>()
+                            .lock()
+                            .menu_target();
+                        session::spawn_editor_window(app_handle.clone(), anchor);
+                    } else {
+                        for window in windows.values() {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                        }
+                        // Focus the window the menus would target, so the app
+                        // comes back on the one the user last used instead of
+                        // an arbitrary entry from the map.
+                        let target = app_handle
+                            .state::<WindowRegistryState>()
+                            .lock()
+                            .menu_target()
+                            .and_then(|label| app_handle.get_webview_window(&label))
+                            .or_else(|| windows.into_values().next());
+                        if let Some(window) = target {
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            }
+
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
                 let paths: Vec<std::path::PathBuf> = urls
                     .iter()
                     .filter_map(|url| url.to_file_path().ok())
                     .collect();
-                session::open_user_paths(app_handle, &paths);
+                if !paths.is_empty() {
+                    // The app can be running with no window at all (see the
+                    // ExitRequested arm above) and a file open has nowhere to
+                    // route in that state, so reserve a window for it first.
+                    if app_handle.webview_windows().is_empty() {
+                        session::spawn_editor_window_for_paths(app_handle, &paths);
+                    } else {
+                        session::open_user_paths(app_handle, &paths);
+                    }
+                }
             }
         });
 }

@@ -50,8 +50,9 @@ integration. There is no Node runtime in the shipped app.
 ### Rust backend (`src-tauri/src/`)
 
 - **`lib.rs`** — Tauri setup, managed state (`ActiveFilePathsState`,
-  `WindowRegistryState`, `PendingFileOpensState`, `RendererReadyState`), the
-  startup file-open queue, Tauri commands, and window events.
+  `WindowRegistryState`, `RecentFilesState`, plus `ExternalFileSyncState` from
+  `file_sync`), Tauri commands, and the `WindowEvent` / `RunEvent` handlers
+  (including the macOS app lifecycle).
 - **`session.rs`** — open/save/autosave flows, editor-window creation, and
   native drag-and-drop resolution (merge, detach, in-window drop).
 - **`window_registry.rs`** — window labels/roles, per-window workspace claims,
@@ -121,9 +122,20 @@ integration. There is no Node runtime in the shipped app.
 - `ExternalFileSyncState` is registered at the start of `.setup()` before any
   pending file-open flush can use it.
 - Renderer IPC listeners exist only after Monaco's AMD modules finish loading.
-  Startup opens (argv / macOS open-file / second-instance) are queued in
-  `PendingFileOpensState` and flushed when the renderer sends `renderer-ready`;
-  `monaco-settings` is emitted only once that fires, to avoid a startup race.
+  Startup opens (argv / macOS open-file / second-instance) are queued per window
+  in `WindowRegistry::pending_opens` and flushed when the renderer sends
+  `renderer-ready`; `monaco-settings` is emitted only once that fires, to avoid a
+  startup race.
+- **macOS keeps the app running with no window.** `RunEvent::ExitRequested`
+  calls `prevent_exit()` only for the interaction case (`code.is_none()`, i.e.
+  every window closed); an explicit quit (Cmd+Q, the Quit menu item) carries a
+  code and has to go through. Because a windowless app still receives
+  `RunEvent::Opened`, and `route_open` silently drops opens addressed to labels
+  it does not know, `session::spawn_editor_window_for_paths` reserves a label and
+  queues the paths against it before building the window on the async runtime —
+  building a window from the event loop deadlocks. `RunEvent::Reopen` (Dock
+  click) restores the windows that still exist, since AppKit reports a
+  miniaturized window as "not visible"; only a genuinely empty app spawns one.
 - Run through `pnpm tauri:dev`; launching the debug binary directly skips the
   Tauri CLI frontend server.
 - On macOS, unbundled dev and installed builds use separate WebKit and

@@ -34,7 +34,6 @@
     'open-new-window-with-tab': 'open_new_window_with_tab',
     'get-window-context': 'get_window_context',
     'claim-workspaces': 'claim_workspaces',
-    'has-other-windows': 'has_other_windows',
   };
 
   // renderer.js passes some IPC args as a bare value (Electron style:
