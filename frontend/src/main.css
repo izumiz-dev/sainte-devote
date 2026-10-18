@@ -1179,12 +1179,15 @@ body.tabs-hidden #tabbar {
 
 /*
  * monacorc.json sets renderLineHighlight: "all", so the line with the caret
- * gets a full-width band. It blends into an opaque editor background, but on a
- * translucent window it reads as a floating stripe under the tab bar, so drop
- * it while the window is see-through. The caret still marks the position.
+ * gets a full-width band plus a 2px border drawn by theme CSS Monaco injects at
+ * runtime (.current-line-exact / .current-line-exact-margin). Both blend into
+ * an opaque editor background, but on a translucent window they read as a
+ * floating stripe and bracket around the caret line, so drop them while the
+ * window is see-through. The caret still marks the position.
  */
 body.window-translucent .monaco-editor .current-line {
   background-color: transparent !important;
+  border-color: transparent !important;
 }
 
 /*
