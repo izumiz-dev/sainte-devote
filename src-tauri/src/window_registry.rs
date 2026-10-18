@@ -191,13 +191,16 @@ impl WindowRegistry {
             .is_some_and(|entry| entry.renderer_ready && !entry.closing)
     }
 
+    pub fn has_other_alive_windows(&self, label: &str) -> bool {
+        self.windows
+            .iter()
+            .any(|(other, entry)| other != label && !entry.closing)
+    }
+
     pub fn on_close_requested(&mut self, label: &str) -> CloseRequestOutcome {
         // A window that is already standing down (closing) is visually gone;
         // the remaining one must not be prompted to keep it alive.
-        let others_alive = self
-            .windows
-            .iter()
-            .any(|(other, entry)| other != label && !entry.closing);
+        let others_alive = self.has_other_alive_windows(label);
         let Some(entry) = self.windows.get_mut(label) else {
             return CloseRequestOutcome::Allow;
         };
@@ -899,5 +902,30 @@ mod tests {
         assert_eq!(relative, cwd.join("note.md"));
         let dotted = cwd.join("foo").join("..").join("bar.md");
         assert_eq!(normalize_owned_path(&dotted, &cwd), cwd.join("bar.md"));
+    }
+
+    #[test]
+    fn has_other_alive_windows_detects_living_windows_and_skips_closing() {
+        let mut registry = WindowRegistry::new();
+        // Only main exists initially.
+        assert!(!registry.has_other_alive_windows(MAIN_LABEL));
+
+        let editor = registry.allocate_editor().unwrap();
+        // Both main and editor are alive.
+        assert!(registry.has_other_alive_windows(MAIN_LABEL));
+        assert!(registry.has_other_alive_windows(&editor));
+
+        // Unknown label has all living windows as other alive windows.
+        assert!(registry.has_other_alive_windows("unknown"));
+
+        // If editor is closing, main has no other alive windows.
+        registry.mark_closing(&editor);
+        assert!(!registry.has_other_alive_windows(MAIN_LABEL));
+        // editor still sees main alive.
+        assert!(registry.has_other_alive_windows(&editor));
+
+        // After destroying editor, main still has no other alive windows.
+        registry.destroy_window(&editor);
+        assert!(!registry.has_other_alive_windows(MAIN_LABEL));
     }
 }

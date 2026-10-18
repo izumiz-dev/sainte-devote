@@ -274,6 +274,14 @@ fn close_window_cancelled(window: tauri::WebviewWindow, registry: State<'_, Wind
 }
 
 #[tauri::command]
+fn has_other_windows(
+    window: tauri::WebviewWindow,
+    registry: State<'_, WindowRegistryState>,
+) -> bool {
+    registry.lock().has_other_alive_windows(window.label())
+}
+
+#[tauri::command]
 fn broadcast_settings(
     window: tauri::WebviewWindow,
     settings: serde_json::Value,
@@ -328,6 +336,7 @@ pub fn run() {
             claim_workspaces,
             close_window_confirmed,
             close_window_cancelled,
+            has_other_windows,
             broadcast_settings,
             export::export_tabs_data
         ])

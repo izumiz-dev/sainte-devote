@@ -1718,10 +1718,13 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
 
     const isScratchTab = !tab.filePath;
     const tabTitle = tab.title || (await nextUntitledTitle(tabId));
+    const scratchContent = isScratchTab
+      ? editors[tabId]?.getValue() ?? tab.content ?? ''
+      : '';
+    const isEmptyScratchTab = isScratchTab && scratchContent.trim().length === 0;
 
     if (isScratchTab && !options.skipConfirm) {
-      const content = editors[tabId]?.getValue() ?? tab.content ?? '';
-      if (content.trim().length > 0) {
+      if (scratchContent.trim().length > 0) {
         const confirmed = await showConfirmDialog(
           `Close "${tabTitle}"?\n\nThis scratch tab will be permanently deleted.`,
         );
@@ -1779,6 +1782,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           // can close it. Await the replacement so updateWindowTitle below
           // sees the new tab's title instead of a stale count.
           if (!options.allowEmpty) {
+            if (isEmptyScratchTab && !options.skipConfirm) {
+              const hasOtherWindows = await window.electron
+                .invoke('has-other-windows')
+                .catch(() => false);
+              if (hasOtherWindows) {
+                await discardWorkspaceAndCloseWindow();
+                return;
+              }
+            }
             await addTab();
           }
         }
