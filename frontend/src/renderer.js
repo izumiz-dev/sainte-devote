@@ -1760,7 +1760,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
               <div class="trash-item-preview" title="${escapeHtml(snippet)}">${escapeHtml(snippet)}</div>
             </div>
             <div class="trash-item-actions">
-              <button type="button" class="trash-restore-btn" data-action="restore" data-id="${item.id}">戻す</button>
+              <button type="button" class="trash-restore-btn" data-action="restore" data-id="${item.id}">Restore</button>
               <button type="button" class="trash-delete-btn" data-action="delete" data-id="${item.id}" title="Delete permanently">×</button>
             </div>
           </div>
