@@ -34,7 +34,9 @@
         "img-src": "'self' data: blob: http: https:",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "worker-src": "'self' blob:"
+        "worker-src": "'self' blob:",
+        "base-uri": "'none'",
+        "form-action": "'none'"
       }
     }
   },
