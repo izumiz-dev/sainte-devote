@@ -1,0 +1,73 @@
+//! macOS backdrop blur (vibrancy) used by the Window Blur setting.
+//!
+//! macOS fixes the blur radius per `NSVisualEffectMaterial` and exposes no
+//! public API for a numeric radius, so the renderer sends one of a few
+//! presets instead of a slider. Tauri cannot remove a vibrancy effect on
+//! macOS, so this module talks to `window-vibrancy` directly.
+
+use tauri::{Runtime, WebviewWindow};
+
+#[cfg(target_os = "macos")]
+fn material_for(strength: &str) -> Result<Option<window_vibrancy::NSVisualEffectMaterial>, String> {
+    use window_vibrancy::NSVisualEffectMaterial;
+
+    Ok(match strength {
+        "off" => None,
+        // Deliberately not NSVisualEffectMaterial::ContentBackground: that
+        // material is meant for a window's own content view and fails to
+        // composite when the NSVisualEffectView is only a subview sitting
+        // behind the webview, which left the window looking unblurred. Menu is
+        // the lightest material that does render in that position.
+        "soft" => Some(NSVisualEffectMaterial::Menu),
+        "standard" => Some(NSVisualEffectMaterial::UnderWindowBackground),
+        "strong" => Some(NSVisualEffectMaterial::FullScreenUI),
+        other => return Err(format!("unknown window blur strength: {other}")),
+    })
+}
+
+/// Applies the requested backdrop blur to the calling window. No-op elsewhere.
+#[tauri::command]
+pub fn set_window_blur<R: Runtime>(
+    window: WebviewWindow<R>,
+    strength: String,
+) -> Result<(), String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, strength);
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectState};
+
+        let material = material_for(&strength)?;
+        let target = window.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        // NSVisualEffectView has to be touched on the main thread, while
+        // commands run on a worker thread, so hop over and wait for the result.
+        window
+            .run_on_main_thread(move || {
+                // apply_vibrancy() inserts a new view on every call instead of
+                // replacing the existing one, so always clear the old one first.
+                let result = clear_vibrancy(&target)
+                    .map_err(|error| format!("failed to clear window blur: {error}"))
+                    .and_then(|_| match material {
+                        Some(material) => apply_vibrancy(
+                            &target,
+                            material,
+                            Some(NSVisualEffectState::Active),
+                            None,
+                        )
+                        .map_err(|error| format!("failed to apply window blur: {error}")),
+                        None => Ok(()),
+                    });
+                let _ = tx.send(result);
+            })
+            .map_err(|error| format!("failed to schedule window blur: {error}"))?;
+
+        rx.recv()
+            .map_err(|error| format!("window blur task failed: {error}"))?
+    }
+}

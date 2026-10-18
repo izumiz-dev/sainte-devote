@@ -1991,7 +1991,20 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     editorFontSize: 0, // 0 = use monacorc.json default
     previewFontFamily: '', // '' = use github-markdown-css default
     previewFontSize: 0, // 0 = use github-markdown-css default
+    windowOpacity: 1, // 0.3 - 1; only applied on macOS
+    windowBlur: 'off', // 'off' | 'soft' | 'standard' | 'strong'
   };
+
+  // Window transparency is handled entirely in CSS: Monaco paints an opaque
+  // editor background from the theme and drops the alpha channel, so main.css
+  // makes the editor surface transparent and lets --window-alpha on the page
+  // background do the work. The Monaco themes stay the stock ones.
+  const WINDOW_ALPHA_MIN = 0.3;
+  const WINDOW_ALPHA_MAX = 1;
+  // A vibrancy material is itself nearly opaque, so once blur is on the app's
+  // own surfaces have to step aside or they hide the frost and the window
+  // looks opaque again. The slider still tints whatever is left.
+  const BLUR_SURFACE_FACTOR = 0.25;
 
   // Curated font presets. value '' means "use the built-in default".
   const FONT_PRESETS = {
@@ -2089,6 +2102,44 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   }
 
   // ---------------------------------------------------------------------------
+  // Window transparency and blur (macOS only)
+  // ---------------------------------------------------------------------------
+  function isMacPlatform() {
+    return !!monacoSettings && monacoSettings.platform === 'darwin';
+  }
+
+  function clampWindowOpacity(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return WINDOW_ALPHA_MAX;
+    return Math.min(WINDOW_ALPHA_MAX, Math.max(WINDOW_ALPHA_MIN, numeric));
+  }
+
+  // Windows are only created transparent on macOS, so everywhere else the
+  // surfaces stay fully opaque even if the setting says otherwise. With blur on,
+  // the vibrancy layer is the backdrop and our surfaces only tint it.
+  function effectiveWindowAlpha() {
+    if (!isMacPlatform()) return WINDOW_ALPHA_MAX;
+    const alpha = clampWindowOpacity(userSettings.windowOpacity);
+    return userSettings.windowBlur === 'off' ? alpha : alpha * BLUR_SURFACE_FACTOR;
+  }
+
+  function applyWindowOpacity() {
+    const alpha = effectiveWindowAlpha();
+    // macOS drops its native window border once the window is transparent, so
+    // the window draws its own frame instead (see main.css).
+    document.body.classList.toggle('macos-window-frame', isMacPlatform());
+    // Highlights such as the current-line band blend into an opaque editor
+    // background but read as a floating stripe once it is see-through.
+    document.body.classList.toggle('window-translucent', alpha < WINDOW_ALPHA_MAX);
+    document.documentElement.style.setProperty('--window-alpha', String(alpha));
+  }
+
+  function applyWindowBlur() {
+    if (!isMacPlatform()) return;
+    window.electron.send('set-window-blur', { strength: userSettings.windowBlur });
+  }
+
+  // ---------------------------------------------------------------------------
   // Settings modal
   // ---------------------------------------------------------------------------
   const settingsOverlay = document.getElementById('settings-overlay');
@@ -2099,6 +2150,11 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const previewFontPreset = document.getElementById('settings-preview-font-preset');
   const previewFontInput = document.getElementById('settings-preview-font');
   const previewSizeInput = document.getElementById('settings-preview-size');
+  const windowOpacityGroup = document.getElementById('settings-window-opacity-group');
+  const windowOpacityInput = document.getElementById('settings-window-opacity');
+  const windowOpacityValue = document.getElementById('settings-window-opacity-value');
+  const windowBlurGroup = document.getElementById('settings-window-blur-group');
+  const windowBlurSegment = document.getElementById('settings-window-blur');
 
   function populateFontPresets() {
     const fill = (select, presets) => {
@@ -2136,9 +2192,18 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     previewFontInput.value = userSettings.previewFontFamily || '';
     matchPreset(previewFontPreset, FONT_PRESETS.preview, userSettings.previewFontFamily || '');
     previewSizeInput.value = userSettings.previewFontSize || 16;
+
+    const opacityPercent = Math.round(clampWindowOpacity(userSettings.windowOpacity) * 100);
+    windowOpacityInput.value = opacityPercent;
+    windowOpacityValue.textContent = `${opacityPercent}%`;
+    windowBlurSegment.querySelectorAll('button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.blur === userSettings.windowBlur);
+    });
   }
 
   function showSettings() {
+    windowOpacityGroup.classList.toggle('hidden', !isMacPlatform());
+    windowBlurGroup.classList.toggle('hidden', !isMacPlatform());
     syncSettingsForm();
     settingsOverlay.classList.remove('hidden');
   }
@@ -2207,12 +2272,32 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     applyPreviewFont();
   });
 
+  windowOpacityInput.addEventListener('input', () => {
+    userSettings.windowOpacity = clampWindowOpacity(parseInt(windowOpacityInput.value, 10) / 100);
+    windowOpacityValue.textContent = `${windowOpacityInput.value}%`;
+    saveSettings();
+    applyWindowOpacity();
+  });
+
+  windowBlurSegment.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-blur]');
+    if (!btn) return;
+    userSettings.windowBlur = btn.dataset.blur;
+    saveSettings();
+    // Blur owns the backdrop while it is on, so the surfaces have to follow.
+    applyWindowOpacity();
+    applyWindowBlur();
+    syncSettingsForm();
+  });
+
   document.getElementById('settings-reset').addEventListener('click', () => {
     userSettings = { ...defaultSettings };
     saveSettings();
     applyTheme();
     applyEditorFont();
     applyPreviewFont();
+    applyWindowOpacity();
+    applyWindowBlur();
     syncSettingsForm();
   });
 
@@ -2236,6 +2321,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     applyTheme();
     applyEditorFont();
     applyPreviewFont();
+    applyWindowOpacity();
+    applyWindowBlur();
     syncSettingsForm();
     applyingRemoteSettings = false;
   });
@@ -2258,6 +2345,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       applyEditorFont();
       applyPreviewFont();
       applyTheme();
+      applyWindowOpacity();
+      applyWindowBlur();
       initializeTabs();
     }
   });

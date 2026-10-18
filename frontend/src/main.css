@@ -1,3 +1,12 @@
+/*
+ * Window transparency for the Window Opacity setting. 1 keeps every surface
+ * opaque; renderer.js only writes a lower value on macOS, where the window is
+ * created transparent (see src-tauri/tauri.macos.conf.json).
+ */
+:root {
+  --window-alpha: 1;
+}
+
 html,
 body {
   margin: 0;
@@ -9,18 +18,18 @@ body {
 
 body {
   transition: background-color 0.3s ease;
-  background-color: #f0f0f0;
+  background-color: rgba(240, 240, 240, var(--window-alpha));
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
 body.dark-theme {
-  background-color: #1e1e1e;
+  background-color: rgba(30, 30, 30, var(--window-alpha));
 }
 
 body.light-theme {
-  background-color: #ffffff;
+  background-color: rgba(255, 255, 255, var(--window-alpha));
 }
 
 #titlebar {
@@ -31,12 +40,12 @@ body.light-theme {
   justify-content: center;
   -webkit-app-region: drag;
   flex-shrink: 0;
-  background-color: #f9fafb;
+  background-color: rgba(249, 250, 251, var(--window-alpha));
   position: relative;
 }
 
 .dark-theme #titlebar {
-  background-color: #111827;
+  background-color: rgba(17, 24, 39, var(--window-alpha));
 }
 
 body.native-titlebar #titlebar {
@@ -366,6 +375,12 @@ body.preview-mode #mode-toggle-btn .icon-edit {
   overflow: auto;
   padding: 20px;
   box-sizing: border-box;
+  /* Beats the vendor .markdown-body background so the preview stays translucent. */
+  background-color: rgba(255, 255, 255, var(--window-alpha));
+}
+
+.dark-theme #preview {
+  background-color: rgba(13, 17, 23, var(--window-alpha));
 }
 
 body.preview-mode #preview {
@@ -429,7 +444,7 @@ body.tabs-hidden #preview {
 #tabbar {
   display: flex;
   align-items: center;
-  background: #e7e9ed;
+  background: rgba(231, 233, 237, var(--window-alpha));
   height: 40px;
   min-height: 40px;
   flex-shrink: 0;
@@ -438,7 +453,7 @@ body.tabs-hidden #preview {
 }
 
 .dark-theme #tabbar {
-  background: #14171c;
+  background: rgba(20, 23, 28, var(--window-alpha));
 }
 
 body.tabs-hidden #tabbar {
@@ -911,10 +926,11 @@ body.tabs-hidden #tabbar {
 }
 
 /* Active tab: a card that merges seamlessly into the editor below.
-   Its fill matches the Monaco background (#fff / #1e1e1e), and a
-   subtle top highlight gives it depth without a visible bottom edge. */
+   Its fill matches the Monaco background (#fff / #1e1e1e) and shares the
+   window alpha, so a translucent window has no opaque seam at the tab edge.
+   A subtle top highlight gives it depth without a visible bottom edge. */
 .tab.active {
-  background: #ffffff;
+  background: rgba(255, 255, 255, var(--window-alpha));
   color: #111827;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
@@ -922,7 +938,7 @@ body.tabs-hidden #tabbar {
 }
 
 .dark-theme .tab.active {
-  background: #1e1e1e;
+  background: rgba(30, 30, 30, var(--window-alpha));
   color: #f3f4f6;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
@@ -930,12 +946,12 @@ body.tabs-hidden #tabbar {
 }
 
 .tab.active:hover {
-  background: #ffffff;
+  background: rgba(255, 255, 255, var(--window-alpha));
   color: #111827;
 }
 
 .dark-theme .tab.active:hover {
-  background: #1e1e1e;
+  background: rgba(30, 30, 30, var(--window-alpha));
   color: #f3f4f6;
 }
 
@@ -1070,6 +1086,61 @@ body.tabs-hidden #tabbar {
   flex: 1;
   overflow: hidden;
   width: 100%;
+}
+
+/*
+ * Window Opacity support for the editor surface.
+ * Monaco paints an opaque background from the active theme's `editor.background`
+ * and drops the alpha channel while generating that CSS, so the color cannot
+ * carry --window-alpha. Making it transparent lets the page background (which
+ * does carry the alpha) show through instead, and leaves the themes untouched.
+ */
+.monaco-editor,
+.monaco-editor-background,
+.monaco-editor .margin {
+  background-color: transparent !important;
+}
+
+/*
+ * Once the editor surface is see-through, WKWebView's focus ring around the
+ * focused editor container shows up as a stray 1px rectangle floating inside
+ * the window. The caret and the selection already convey focus here.
+ */
+#editor-container,
+.editor,
+.monaco-editor,
+.monaco-editor .overflow-guard {
+  outline: none;
+}
+
+/*
+ * monacorc.json sets renderLineHighlight: "all", so the line with the caret
+ * gets a full-width band. It blends into an opaque editor background, but on a
+ * translucent window it reads as a floating stripe under the tab bar, so drop
+ * it while the window is see-through. The caret still marks the position.
+ */
+body.window-translucent .monaco-editor .current-line {
+  background-color: transparent !important;
+}
+
+/*
+ * A transparent window loses macOS's own hairline border, so the window edge
+ * dissolves into whatever is behind it. Draw an equivalent frame ourselves;
+ * the radius matches the window's rounded corners. renderer.js adds this class
+ * on macOS only, so Windows keeps its native border.
+ */
+body.macos-window-frame::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 10000;
+}
+
+body.dark-theme.macos-window-frame::after {
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 
@@ -1499,6 +1570,12 @@ body.tabs-hidden #tabbar {
   gap: 6px;
 }
 
+/* Platform-specific groups (Window Opacity / Window Blur) start hidden and are
+   revealed by renderer.js once the platform is known. */
+.settings-group.hidden {
+  display: none;
+}
+
 .settings-label {
   font-size: 12px;
   font-weight: 600;
@@ -1534,6 +1611,28 @@ body.tabs-hidden #tabbar {
 .settings-group select:focus,
 .settings-group input:focus {
   border-color: #3b82f6;
+}
+
+.settings-slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-slider input[type='range'] {
+  flex: 1;
+  accent-color: #3b82f6;
+}
+
+.settings-value {
+  min-width: 42px;
+  text-align: right;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.dark-theme .settings-value {
+  color: #9ca3af;
 }
 
 .settings-segment {

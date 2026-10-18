@@ -113,6 +113,24 @@
             <button type="button" data-theme="dark">Dark</button>
           </div>
         </div>
+        <!-- Window transparency and blur are macOS-only; renderer.js hides
+             these groups on other platforms. -->
+        <div class="settings-group hidden" id="settings-window-opacity-group">
+          <label class="settings-label" for="settings-window-opacity">Window Opacity</label>
+          <div class="settings-slider">
+            <input id="settings-window-opacity" type="range" min="30" max="100" step="1" />
+            <span class="settings-value" id="settings-window-opacity-value">100%</span>
+          </div>
+        </div>
+        <div class="settings-group hidden" id="settings-window-blur-group">
+          <label class="settings-label">Window Blur</label>
+          <div class="settings-segment" id="settings-window-blur">
+            <button type="button" data-blur="off">Off</button>
+            <button type="button" data-blur="soft">Soft</button>
+            <button type="button" data-blur="standard">Standard</button>
+            <button type="button" data-blur="strong">Strong</button>
+          </div>
+        </div>
         <div class="settings-group">
           <label class="settings-label" for="settings-editor-font">Editor Font</label>
           <select id="settings-editor-font-preset"></select>

@@ -2856,6 +2856,7 @@ dependencies = [
  "tempfile",
  "time",
  "url",
+ "window-vibrancy",
  "windows",
  "windows-core 0.61.2",
  "zip",
