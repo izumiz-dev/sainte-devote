@@ -13,6 +13,7 @@
     "lint:tauri": "eslint frontend/src scripts/vendor.mjs scripts/verify-release-version.mjs --max-warnings 0",
     "check:tauri": "pnpm lint:tauri && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "test:frontend": "node --test frontend/src/workspace-store.test.js",
+    "test:e2e:mac": "python3 test/macos/verify_e2e.py",
     "vendor": "node scripts/vendor.mjs",
     "tauri": "tauri",
     "tauri:dev": "node scripts/vendor.mjs && tauri dev",
