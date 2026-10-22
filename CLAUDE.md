@@ -8,6 +8,7 @@ This file provides guidance to Claude Code when working with this repository.
 pnpm tauri:dev
 pnpm check:tauri
 cargo test --manifest-path src-tauri/Cargo.toml
+pnpm test:e2e:mac   # macOS E2E against the built .app (see test/macos/README.md)
 pnpm tauri:build
 ```
 
@@ -104,4 +105,8 @@ integration.
 Run `pnpm check:tauri`, `cargo test --manifest-path src-tauri/Cargo.toml`,
 `pnpm test:frontend`, `pnpm lint`, and `git diff --check`. Manual GUI checks are
 required for changes to drag and drop, native menus, file synchronization,
-startup/open-file paths, or platform packaging.
+startup/open-file paths, or platform packaging; the automated macOS suite
+(`pnpm test:e2e:mac`) covers the file, session, and multi-window flows when a
+built `.app` is available. Window-to-window tab drag-and-drop still needs a
+manual pass: synthetic mouse events do not reach the app on this machine, so the
+suite cannot automate it.

@@ -4,25 +4,20 @@ This file provides guidance to Codex (codex.ai/code) when working with code in
 this repository. See also [CLAUDE.md](CLAUDE.md), which is the authoritative
 source for architecture, security boundaries, and completion checks.
 
-## Serena
+## Testing
 
-This project is set up for **Serena** (`.serena/project.yml`, memories in
-`.serena/memories/`). When the Serena MCP tools are available, prefer them:
+```bash
+pnpm test:frontend  # node:test unit tests for the renderer store
+cargo test --manifest-path src-tauri/Cargo.toml
+pnpm test:e2e:mac   # macOS E2E against the built .app
+```
 
-- **Context:** `read_memory` / `list_memories` instead of manually re-reading
-  files; `write_memory` when you establish a new convention. Current memories:
-  `project_overview`, `suggested_commands`, `code_style_conventions`,
-  `task_completion_workflow`, `os_file_security_hardening`,
-  `tab_navigation_regression_test`.
-- **Code navigation:** `find_symbol`, `get_symbols_overview`,
-  `search_for_pattern` instead of raw reads.
-- **Editing:** `replace_symbol_body`, `insert_after_symbol`, etc. instead of
-  rewriting whole files.
-
-Note: the Serena language server is configured for `typescript`, which also
-serves this project's plain JavaScript frontend. Rust symbol analysis via
-Serena may be unavailable, so navigate `src-tauri/` with `search_for_pattern`
-or raw reads.
+`pnpm test:e2e:mac` drives the real app through the macOS accessibility API
+(read/write, open, save, session restore, external-change conflicts, security
+boundaries, multiple windows). It needs a built `.app` (`pnpm build:mac`),
+Accessibility permission for the terminal, and it **takes over the machine** for
+15–25 minutes: touching the app's windows during a run invalidates every case.
+See [test/macos/README.md](test/macos/README.md) for prerequisites and coverage.
 
 ## Commands
 
@@ -37,9 +32,11 @@ pnpm tauri:build  # / build:mac / build:win / build:linux — package via Tauri
 Rust tests run separately:
 `cargo test --manifest-path src-tauri/Cargo.toml`.
 
-Verification is mostly manual (this is a GUI app): run `pnpm tauri:dev` and
-exercise the UI. Rust modules carry unit tests (validation, external URLs).
-Node 24+, pnpm 10+, and the Rust toolchain are pinned in `mise.toml`.
+Verification is manual for GUI behaviour: run `pnpm tauri:dev` and exercise the
+UI. Rust modules carry unit tests (validation, external URLs); the macOS
+regression suite under `test/macos/` covers the file, session, and multi-window
+flows automatically (`pnpm test:e2e:mac`). Node 24+, pnpm 10+, and the Rust
+toolchain are pinned in `mise.toml`.
 
 ## Architecture
 

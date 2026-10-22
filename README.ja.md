@@ -78,6 +78,10 @@ cargo test --manifest-path src-tauri/Cargo.toml
 pnpm test:frontend
 ```
 
+macOS向けのE2Eテスト(`pnpm test:e2e:mac`)は、ビルド済みの`.app`をアクセシビリティAPI経由で
+実際に操作します(複数ウィンドウのフローを含む)。前提条件と検証内容は
+[test/macos/README.md](test/macos/README.md) を参照してください。
+
 ## Electron版からの移行
 
 Electron版とTauri版ではWebViewのデータ保存領域が異なるため、Electron版のスクラッチタブは

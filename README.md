@@ -76,6 +76,10 @@ cargo test --manifest-path src-tauri/Cargo.toml
 pnpm test:frontend
 ```
 
+The macOS-only end-to-end suite (`pnpm test:e2e:mac`) drives a built `.app`
+through the accessibility API, including multiple windows. See
+[test/macos/README.md](test/macos/README.md) for prerequisites and coverage.
+
 ## Migrating from the Electron Build
 
 Scratch tabs stored by the Electron build are not automatically available to

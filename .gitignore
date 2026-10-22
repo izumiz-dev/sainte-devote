@@ -8,6 +8,10 @@
 # Local manual-verification scratch dirs
 scripts/.verify-*
 
+# Python bytecode from the macOS E2E harness
+__pycache__/
+*.pyc
+
 # Logs
 logs
 *.log
@@ -121,9 +125,3 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
-
-# Serena MCP
-.serena/*
-
-!.serena/project.yml
-!.serena/memories/
