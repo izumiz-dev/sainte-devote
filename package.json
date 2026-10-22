@@ -31,14 +31,14 @@
     "monaco-editor": "^0.50.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.12.4",
     "eslint": "^9.15.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
     "fake-indexeddb": "^6.2.5",
     "prettier": "^3.3.3"
   },
-  "packageManager": "pnpm@10.28.0",
+  "packageManager": "pnpm@12.15.0",
   "engines": {
     "node": ">=24",
     "pnpm": ">=10"

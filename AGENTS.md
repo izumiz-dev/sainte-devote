@@ -35,7 +35,7 @@ Rust tests run separately:
 Verification is manual for GUI behaviour: run `pnpm tauri:dev` and exercise the
 UI. Rust modules carry unit tests (validation, external URLs); the macOS
 regression suite under `test/macos/` covers the file, session, and multi-window
-flows automatically (`pnpm test:e2e:mac`). Node 24+, pnpm 10+, and the Rust
+flows automatically (`pnpm test:e2e:mac`). Node 24+, pnpm 12+, and the Rust
 toolchain are pinned in `mise.toml`.
 
 ## Architecture

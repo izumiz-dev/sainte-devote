@@ -12,7 +12,7 @@ pnpm test:e2e:mac   # macOS E2E against the built .app (see test/macos/README.md
 pnpm tauri:build
 ```
 
-Node 24+, pnpm 10+, and the Rust toolchain are pinned in `mise.toml`.
+Node 24+, pnpm 12+, and the Rust toolchain are pinned in `mise.toml`.
 
 ## Architecture
 
