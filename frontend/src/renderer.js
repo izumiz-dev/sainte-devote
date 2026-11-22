@@ -133,6 +133,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     monitor: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>',
     sun: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',
     moon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
+    download: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
     default: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
   };
   const tabData = {};
@@ -272,6 +273,8 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     tabData[tabId].filePath = filePath;
     tabData[tabId].readOnly = false;
     tabData[tabId].fileMissing = false;
+    tabData[tabId].hasLocalEditsWhileMissing = false;
+    tabData[tabId].hasUnsavedReadOnlyEdits = false;
     tabData[tabId].hasLocalEditsWhileMissing = false;
     tabData[tabId].title = fileName;
     updateTabTitleUI(tabId, fileName);
@@ -510,6 +513,9 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
           }
           if (tabData[tabId]?.fileMissing) {
             tabData[tabId].hasLocalEditsWhileMissing = true;
+          }
+          if (tabData[tabId]?.readOnly) {
+            tabData[tabId].hasUnsavedReadOnlyEdits = true;
           }
           if (
             tabData[tabId]?.filePath &&
@@ -1980,6 +1986,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     previewFontSize: 0, // 0 = use github-markdown-css default
     windowOpacity: 1, // 0.3 - 1; only applied on macOS
     windowBlur: 'off', // 'off' | 'dense' | 'sheer'; only applied on macOS
+    autoCheckUpdates: true,
   };
 
   // Window transparency is handled entirely in CSS: Monaco paints an opaque
@@ -2169,6 +2176,10 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
   const windowOpacityValue = document.getElementById('settings-window-opacity-value');
   const windowBlurGroup = document.getElementById('settings-window-blur-group');
   const windowBlurSegment = document.getElementById('settings-window-blur');
+  const settingsAppVersion = document.getElementById('settings-app-version');
+  const settingsCheckUpdatesBtn = document.getElementById('settings-check-updates');
+  const settingsAutoUpdatesCheckbox = document.getElementById('settings-auto-updates');
+  const settingsUpdateStatus = document.getElementById('settings-update-status');
 
   function populateFontPresets() {
     const fill = (select, presets) => {
@@ -2214,6 +2225,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     windowBlurSegment.querySelectorAll('button').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.blur === blur);
     });
+    settingsAutoUpdatesCheckbox.checked = userSettings.autoCheckUpdates !== false;
   }
 
   function showSettings() {
@@ -2305,6 +2317,15 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
     syncSettingsForm();
   });
 
+  settingsAutoUpdatesCheckbox.addEventListener('change', () => {
+    userSettings.autoCheckUpdates = settingsAutoUpdatesCheckbox.checked;
+    saveSettings();
+  });
+
+  settingsCheckUpdatesBtn.addEventListener('click', () => {
+    checkForUpdates(true);
+  });
+
   document.getElementById('settings-reset').addEventListener('click', () => {
     userSettings = { ...defaultSettings };
     saveSettings();
@@ -2363,8 +2384,291 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       applyWindowOpacity();
       applyWindowBlur();
       initializeTabs();
+      initializeUpdater();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // Auto-updater UI & status sync
+  // ---------------------------------------------------------------------------
+  const updateBanner = document.getElementById('update-banner');
+  const updateBannerTitle = document.getElementById('update-banner-title');
+  const updateBannerMessage = document.getElementById('update-banner-message');
+  const updateBannerProgress = document.getElementById('update-banner-progress');
+  const updateBannerProgressTrack = updateBannerProgress.querySelector('.update-banner-progress-track');
+  const updateBannerProgressBar = document.getElementById('update-banner-progress-bar');
+  const updateBannerProgressText = document.getElementById('update-banner-progress-text');
+  const updateBannerInstallBtn = document.getElementById('update-banner-install');
+  const updateBannerNotesBtn = document.getElementById('update-banner-notes');
+  const updateBannerLaterBtn = document.getElementById('update-banner-later');
+  const updateBannerCloseBtn = document.getElementById('update-banner-close');
+
+  let currentUpdateReleaseUrl = '';
+  let updaterInitialized = false;
+  let installFlowInFlight = false;
+
+  function setSettingsUpdateStatusText(text) {
+    if (!settingsUpdateStatus) return;
+    if (!text) {
+      settingsUpdateStatus.textContent = '';
+      settingsUpdateStatus.classList.add('hidden');
+    } else {
+      settingsUpdateStatus.textContent = text;
+      settingsUpdateStatus.classList.remove('hidden');
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function hideUpdateBanner() {
+    updateBanner.classList.add('hidden');
+  }
+
+  function shouldNotifyThisWindow(status, notifyResult) {
+    if (!notifyResult || !status.manual) return false;
+    const myLabel = currentTauriWindow()?.label;
+    if (status.targetWindow && myLabel) {
+      return status.targetWindow === myLabel;
+    }
+    return true;
+  }
+
+  function renderAvailableBanner(info) {
+    currentUpdateReleaseUrl = info.releaseUrl || '';
+    updateBannerTitle.textContent = `Update Available (v${info.version})`;
+    updateBannerMessage.textContent = info.currentVersion
+      ? `A new version is ready (current: v${info.currentVersion}).`
+      : 'A new version is ready to install.';
+    updateBannerProgress.classList.add('hidden');
+    updateBannerProgressTrack.classList.remove('hidden');
+    updateBannerProgressBar.style.width = '0%';
+    updateBannerProgressText.textContent = '0%';
+    updateBannerInstallBtn.disabled = false;
+    updateBannerInstallBtn.textContent = 'Install & Restart';
+    updateBannerLaterBtn.disabled = false;
+    updateBannerCloseBtn.disabled = false;
+    updateBannerNotesBtn.classList.toggle('hidden', !currentUpdateReleaseUrl);
+    updateBanner.classList.remove('hidden');
+  }
+
+  function flushPendingFileAutosaves() {
+    for (const tabIdKey of Object.keys(autosaveTimers)) {
+      clearTimeout(autosaveTimers[tabIdKey]);
+      delete autosaveTimers[tabIdKey];
+      const tabId = Number(tabIdKey);
+      const tab = tabData[tabId];
+      if (tab?.filePath && !tab.readOnly && !tab.fileMissing && !conflictTabs.has(tabId)) {
+        const content = editors[tabId]?.getValue() ?? tab.content ?? '';
+        window.electron.send('save-file-to-path', { filePath: tab.filePath, content });
+      }
+    }
+  }
+
+  function collectUnsavedUpdateWarnings() {
+    const warnings = [];
+    for (const [idKey, tab] of Object.entries(tabData)) {
+      const tabId = Number(idKey);
+      if (conflictTabs.has(tabId) || tab.hasLocalEditsWhileMissing || tab.hasUnsavedReadOnlyEdits) {
+        warnings.push(tab.title || `Tab ${tabId}`);
+      }
+    }
+    return warnings;
+  }
+
+  function applyUpdateStatus(status, { notifyResult = true } = {}) {
+    if (!status || !status.status) return;
+
+    switch (status.status) {
+    case 'idle':
+      settingsCheckUpdatesBtn.disabled = false;
+      setSettingsUpdateStatusText('');
+      hideUpdateBanner();
+      break;
+
+    case 'checking':
+      if (status.manual) {
+        settingsCheckUpdatesBtn.disabled = true;
+        setSettingsUpdateStatusText('Checking for updates...');
+      }
+      break;
+
+    case 'available':
+      settingsCheckUpdatesBtn.disabled = false;
+      setSettingsUpdateStatusText(`Update available: v${status.version}`);
+      if (status.dismissed) {
+        hideUpdateBanner();
+        break;
+      }
+      renderAvailableBanner(status);
+      break;
+
+    case 'up-to-date':
+      settingsCheckUpdatesBtn.disabled = false;
+      setSettingsUpdateStatusText(`Up to date (v${status.currentVersion})`);
+      hideUpdateBanner();
+      if (shouldNotifyThisWindow(status, notifyResult)) {
+        showNotification(`You're up to date (v${status.currentVersion})`);
+      }
+      break;
+
+    case 'downloading': {
+      settingsCheckUpdatesBtn.disabled = true;
+      currentUpdateReleaseUrl = status.releaseUrl || '';
+      updateBannerTitle.textContent = `Downloading v${status.version}...`;
+      updateBannerMessage.textContent = 'Downloading update package...';
+      updateBannerProgress.classList.remove('hidden');
+      if (status.total && status.total > 0) {
+        const percent = Math.min(100, Math.round((status.downloaded / status.total) * 100));
+        updateBannerProgressTrack.classList.remove('hidden');
+        updateBannerProgressBar.style.width = `${percent}%`;
+        updateBannerProgressText.textContent = `${percent}%`;
+      } else {
+        updateBannerProgressTrack.classList.add('hidden');
+        updateBannerProgressText.textContent = formatBytes(status.downloaded);
+      }
+      updateBannerInstallBtn.disabled = true;
+      updateBannerInstallBtn.textContent = 'Downloading...';
+      updateBannerLaterBtn.disabled = true;
+      updateBannerCloseBtn.disabled = true;
+      updateBannerNotesBtn.classList.toggle('hidden', !currentUpdateReleaseUrl);
+      updateBanner.classList.remove('hidden');
+      setSettingsUpdateStatusText(`Downloading v${status.version}...`);
+      break;
+    }
+
+    case 'installing':
+      settingsCheckUpdatesBtn.disabled = true;
+      currentUpdateReleaseUrl = status.releaseUrl || '';
+      updateBannerTitle.textContent = `Installing v${status.version}...`;
+      updateBannerMessage.textContent = 'Installing update and restarting...';
+      updateBannerProgress.classList.remove('hidden');
+      updateBannerProgressTrack.classList.remove('hidden');
+      updateBannerProgressBar.style.width = '100%';
+      updateBannerProgressText.textContent = '100%';
+      updateBannerInstallBtn.disabled = true;
+      updateBannerInstallBtn.textContent = 'Restarting...';
+      updateBannerLaterBtn.disabled = true;
+      updateBannerCloseBtn.disabled = true;
+      updateBannerNotesBtn.classList.toggle('hidden', !currentUpdateReleaseUrl);
+      updateBanner.classList.remove('hidden');
+      setSettingsUpdateStatusText(`Installing v${status.version}...`);
+      break;
+
+    case 'error':
+      settingsCheckUpdatesBtn.disabled = false;
+      setSettingsUpdateStatusText(status.message || 'Update check failed.');
+      if (status.available) {
+        renderAvailableBanner(status.available);
+      } else {
+        hideUpdateBanner();
+      }
+      if (shouldNotifyThisWindow(status, notifyResult)) {
+        showNotification(status.message || 'Update failed.', 'error');
+      }
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  function checkForUpdates(manual = true) {
+    window.electron.invoke('check-for-update', { manual }).catch((error) => {
+      console.error('Failed to check for updates:', error);
+      if (manual) {
+        showNotification(`Failed to check for updates: ${error}`, 'error');
+      }
+    });
+  }
+
+  async function installPendingUpdate() {
+    if (installFlowInFlight) return;
+    installFlowInFlight = true;
+    try {
+      const unsavedTabs = await window.electron.invoke('prepare-update-install');
+      if (Array.isArray(unsavedTabs) && unsavedTabs.length > 0) {
+        const uniqueNames = [...new Set(unsavedTabs)];
+        const listed = uniqueNames.slice(0, 5).map((name) => `• ${name}`).join('\n');
+        const extra = uniqueNames.length > 5 ? `\n…and ${uniqueNames.length - 5} more` : '';
+        const confirmed = await showConfirmDialog(
+          `The following tabs have unsaved edits (unresolved conflict, deleted file, or read-only file) that will be lost on restart:\n\n${listed}${extra}\n\nInstall the update and restart anyway?`,
+          'Install & Restart',
+        );
+        if (!confirmed) return;
+      }
+      await window.electron.invoke('install-update');
+    } catch (error) {
+      console.error('Failed to install update:', error);
+    } finally {
+      installFlowInFlight = false;
+    }
+  }
+
+  updateBannerInstallBtn.addEventListener('click', () => {
+    installPendingUpdate();
+  });
+
+  updateBannerNotesBtn.addEventListener('click', () => {
+    if (currentUpdateReleaseUrl) {
+      window.electron.send('open-external', currentUpdateReleaseUrl);
+    }
+  });
+
+  function dismissUpdateBanner() {
+    hideUpdateBanner();
+    window.electron.send('dismiss-update');
+  }
+
+  updateBannerLaterBtn.addEventListener('click', dismissUpdateBanner);
+  updateBannerCloseBtn.addEventListener('click', dismissUpdateBanner);
+
+  window.electron.receive('update-status', (status) => {
+    applyUpdateStatus(status, { notifyResult: true });
+  });
+
+  window.electron.receive('update-prepare-install', ({ requestId }) => {
+    flushPendingFileAutosaves();
+    window.electron.send('report-update-prepare', {
+      requestId,
+      unsavedTabs: collectUnsavedUpdateWarnings(),
+    });
+  });
+
+  function initializeUpdater() {
+    if (updaterInitialized) return;
+    updaterInitialized = true;
+
+    window.electron
+      .invoke('get-app-version')
+      .then((version) => {
+        if (version) {
+          settingsAppVersion.textContent = `Version ${version}`;
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to read app version:', error);
+      });
+
+    window.electron
+      .invoke('get-update-status')
+      .then((status) => {
+        applyUpdateStatus(status, { notifyResult: false });
+      })
+      .catch((error) => {
+        console.error('Failed to read update status:', error);
+      });
+
+    if (userSettings.autoCheckUpdates !== false) {
+      setTimeout(() => {
+        checkForUpdates(false);
+      }, 3000);
+    }
+  }
 
   window.electron.receive('file-opened', ({ filePath, content, readOnly }) => {
     if (!isInitialized) {
@@ -2624,6 +2928,7 @@ require(['vs/editor/editor.main', 'marked'], function (_, marked) {
       { id: 'copy-clipboard', type: 'command', label: 'Copy Tab to Clipboard', detail: 'Copy current tab content to clipboard', icon: icons.copy, action: () => { if (currentTab) copyToClipboard(currentTab); } },
       { id: 'backup-export-all', type: 'command', label: 'Backup: Export All Tabs (.zip)', detail: 'Export all tabs as a ZIP file', icon: icons.archive, action: () => exportAllTabs() },
       { id: 'open-settings', type: 'command', label: 'Open Settings', detail: 'Editor / preview fonts and theme', icon: icons.settings, action: () => showSettings() },
+      { id: 'check-for-updates', type: 'command', label: 'Check for Updates', detail: 'Check for a new version on GitHub Releases', icon: icons.download, action: () => checkForUpdates(true) },
       { id: 'open-archive', type: 'command', label: 'Open Archived Tabs', detail: 'View and restore archived scratch tabs', icon: icons.archive, action: () => showTrashPopover() },
       { id: 'theme-system', type: 'command', label: 'Theme: Use System', detail: 'Follow the OS light / dark setting', icon: icons.monitor, action: () => setTheme('system') },
       { id: 'theme-light', type: 'command', label: 'Theme: Light', detail: 'Always use the light theme', icon: icons.sun, action: () => setTheme('light') },

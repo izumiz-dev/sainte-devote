@@ -11,6 +11,17 @@ where
     }
 }
 
+pub fn emit_to_all_windows<R, S>(app: &AppHandle<R>, event: &str, payload: S)
+where
+    R: Runtime,
+    S: Serialize + Clone,
+{
+    use tauri::Manager;
+    for label in app.webview_windows().keys() {
+        emit_to_window(app, label, event, payload.clone());
+    }
+}
+
 pub fn emit_except_window<R, S>(app: &AppHandle<R>, sender: &str, event: &str, payload: S)
 where
     R: Runtime,

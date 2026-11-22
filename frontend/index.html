@@ -154,10 +154,40 @@
           <label class="settings-label" for="settings-preview-size">Preview Font Size (px)</label>
           <input id="settings-preview-size" type="number" min="8" max="48" step="1" />
         </div>
+        <div class="settings-group" id="settings-updates-group">
+          <label class="settings-label">Updates</label>
+          <div class="settings-update-row">
+            <span class="settings-update-version" id="settings-app-version">Version —</span>
+            <button id="settings-check-updates" type="button" class="settings-action-btn">Check for Updates</button>
+          </div>
+          <label class="settings-checkbox">
+            <input id="settings-auto-updates" type="checkbox" />
+            <span>Automatically check for updates on startup</span>
+          </label>
+          <div class="settings-update-status hidden" id="settings-update-status"></div>
+        </div>
       </div>
       <div class="settings-footer">
         <button id="settings-reset" type="button">Reset to defaults</button>
       </div>
+    </div>
+  </div>
+  <div id="update-banner" class="hidden" role="status" aria-live="polite">
+    <div class="update-banner-header">
+      <span id="update-banner-title">Update Available</span>
+      <button id="update-banner-close" type="button" title="Dismiss" aria-label="Dismiss">×</button>
+    </div>
+    <div id="update-banner-message" class="update-banner-message"></div>
+    <div id="update-banner-progress" class="update-banner-progress hidden">
+      <div class="update-banner-progress-track">
+        <div id="update-banner-progress-bar" class="update-banner-progress-bar"></div>
+      </div>
+      <span id="update-banner-progress-text" class="update-banner-progress-text">0%</span>
+    </div>
+    <div class="update-banner-actions">
+      <button id="update-banner-install" type="button" class="update-banner-btn-primary">Install &amp; Restart</button>
+      <button id="update-banner-notes" type="button" class="update-banner-btn-secondary">Release Notes</button>
+      <button id="update-banner-later" type="button" class="update-banner-btn-secondary">Later</button>
     </div>
   </div>
   <!-- Load DOMPurify before Monaco's AMD loader so its UMD build attaches to
