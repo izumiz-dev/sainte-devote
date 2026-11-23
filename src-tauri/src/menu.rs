@@ -77,11 +77,20 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     #[cfg(target_os = "macos")]
     window_menu.set_as_windows_menu_for_nsapp()?;
 
+    let check_for_updates = MenuItem::with_id(
+        app,
+        "check-for-updates",
+        "Check for Updates...",
+        true,
+        None::<&str>,
+    )?;
+
     let builder = MenuBuilder::new(app);
     #[cfg(target_os = "macos")]
     let builder = {
         let app_menu = SubmenuBuilder::new(app, "Sainte Devote")
             .about(None)
+            .item(&check_for_updates)
             .separator()
             .services()
             .separator()
@@ -93,16 +102,29 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         builder.item(&app_menu)
     };
 
-    builder
+    let builder = builder
         .item(&file_menu)
         .item(&edit_menu)
         .item(&view_menu)
-        .item(&window_menu)
-        .build()
+        .item(&window_menu);
+
+    #[cfg(not(target_os = "macos"))]
+    let builder = {
+        let help_menu = SubmenuBuilder::new(app, "Help")
+            .item(&check_for_updates)
+            .build()?;
+        builder.item(&help_menu)
+    };
+
+    builder.build()
 }
 
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEvent) {
     let id = event.id().as_ref();
+    if id == "check-for-updates" {
+        crate::updater::trigger_manual_check(app.clone());
+        return;
+    }
     if id == "new-window" {
         let anchor = app.state::<WindowRegistryState>().lock().menu_target();
         session::spawn_editor_window(app.clone(), anchor);

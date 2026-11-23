@@ -1848,3 +1848,247 @@ body.dark-theme.macos-window-frame::after {
   border-color: #374151;
   color: #d1d5db;
 }
+
+.settings-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-update-version {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.dark-theme .settings-update-version {
+  color: #9ca3af;
+}
+
+.settings-action-btn {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-action-btn:hover:not(:disabled) {
+  border-color: #3b82f6;
+  color: #2563eb;
+}
+
+.settings-action-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dark-theme .settings-action-btn {
+  background: #1e1e1e;
+  border-color: #374151;
+  color: #e5e7eb;
+}
+
+.dark-theme .settings-action-btn:hover:not(:disabled) {
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-checkbox input[type='checkbox'] {
+  accent-color: #3b82f6;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.dark-theme .settings-checkbox {
+  color: #d1d5db;
+}
+
+.settings-update-status {
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.settings-update-status.hidden {
+  display: none;
+}
+
+.dark-theme .settings-update-status {
+  color: #9ca3af;
+}
+
+#update-banner {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 12px 14px;
+  z-index: 10002;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#update-banner.hidden {
+  display: none;
+}
+
+.dark-theme #update-banner {
+  background: #252526;
+  color: #f3f4f6;
+  border-color: #374151;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.update-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#update-banner-close {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.dark-theme #update-banner-close {
+  color: #9ca3af;
+}
+
+.update-banner-message {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4b5563;
+}
+
+.dark-theme .update-banner-message {
+  color: #d1d5db;
+}
+
+.update-banner-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-banner-progress.hidden {
+  display: none;
+}
+
+.update-banner-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.update-banner-progress-track.hidden {
+  display: none;
+}
+
+.dark-theme .update-banner-progress-track {
+  background: #374151;
+}
+
+.update-banner-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #3b82f6;
+  transition: width 0.15s ease;
+}
+
+.update-banner-progress-text {
+  font-size: 11px;
+  color: #6b7280;
+  min-width: 36px;
+  text-align: right;
+}
+
+.dark-theme .update-banner-progress-text {
+  color: #9ca3af;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.update-banner-btn-primary,
+.update-banner-btn-secondary {
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.update-banner-btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.update-banner-btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.update-banner-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.update-banner-btn-secondary {
+  background: #ffffff;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.update-banner-btn-secondary:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.update-banner-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dark-theme .update-banner-btn-secondary {
+  background: #1e1e1e;
+  color: #d1d5db;
+  border-color: #374151;
+}
+
+.dark-theme .update-banner-btn-secondary:hover:not(:disabled) {
+  background: #2d2d30;
+}

@@ -23,6 +23,8 @@
     'tab-dropped-in-window',
     'tab-drag-consumed',
     'open-tab',
+    'update-status',
+    'update-prepare-install',
   ]);
 
   // renderer.js channel name -> Tauri command name for invoke().
@@ -34,6 +36,11 @@
     'open-new-window-with-tab': 'open_new_window_with_tab',
     'get-window-context': 'get_window_context',
     'claim-workspaces': 'claim_workspaces',
+    'check-for-update': 'check_for_update',
+    'prepare-update-install': 'prepare_update_install',
+    'install-update': 'install_update',
+    'get-app-version': 'get_app_version',
+    'get-update-status': 'get_update_status',
   };
 
   // renderer.js passes some IPC args as a bare value (Electron style:
@@ -63,6 +70,8 @@
     'close-window-cancelled': 'close_window_cancelled',
     'broadcast-settings': 'broadcast_settings',
     'set-window-blur': 'set_window_blur',
+    'dismiss-update': 'dismiss_update',
+    'report-update-prepare': 'report_update_prepare',
   };
 
   // Same bare-arg wrapping as above, but for send() channels.

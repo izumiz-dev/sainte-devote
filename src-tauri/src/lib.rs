@@ -9,6 +9,7 @@ mod ipc;
 mod menu;
 mod session;
 mod settings;
+mod updater;
 mod validate;
 #[cfg(windows)]
 mod win_drag_drop;
@@ -308,9 +309,11 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(WindowRegistryState::new())
         .manage(ActiveFilePathsState::new())
         .manage(RecentFilesState::new())
+        .manage(updater::UpdaterState::new())
         .menu(menu::build_menu)
         .on_menu_event(menu::handle_menu_event)
         .invoke_handler(tauri::generate_handler![
@@ -335,7 +338,14 @@ pub fn run() {
             close_window_cancelled,
             broadcast_settings,
             window_effects::set_window_blur,
-            export::export_tabs_data
+            export::export_tabs_data,
+            updater::check_for_update,
+            updater::dismiss_update,
+            updater::prepare_update_install,
+            updater::report_update_prepare,
+            updater::install_update,
+            updater::get_app_version,
+            updater::get_update_status
         ])
         .setup(|app| {
             let sync = file_sync::ExternalFileSyncState::spawn(app.handle().clone())
@@ -386,6 +396,13 @@ pub fn run() {
                     .recheck_all();
             }
             WindowEvent::CloseRequested { api, .. } => {
+                if window
+                    .app_handle()
+                    .state::<updater::UpdaterState>()
+                    .is_restarting()
+                {
+                    return;
+                }
                 let label = window.label().to_string();
                 let outcome = window
                     .app_handle()
@@ -433,7 +450,7 @@ pub fn run() {
                 // closed, code == None) is held back — an explicit quit
                 // (Cmd+Q or the Quit menu item) carries a code and has to go
                 // through.
-                if code.is_none() {
+                if code.is_none() && !app_handle.state::<updater::UpdaterState>().is_restarting() {
                     api.prevent_exit();
                 }
             }

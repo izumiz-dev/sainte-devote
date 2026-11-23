@@ -173,7 +173,11 @@ class App:
     def launch(self, extra_args: tuple[str, ...] = (), timeout: float = 45.0) -> None:
         if self.proc is not None:
             raise Failure("app is already running; call quit() first")
-        env = dict(os.environ, CFFIXED_USER_HOME=str(self.home))
+        env = dict(
+            os.environ,
+            CFFIXED_USER_HOME=str(self.home),
+            SAINTE_DEVOTE_DISABLE_AUTO_UPDATE="1",
+        )
         self.proc = subprocess.Popen(
             [str(self.binary), *extra_args],
             env=env,
