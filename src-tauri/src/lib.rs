@@ -396,6 +396,13 @@ pub fn run() {
                     .recheck_all();
             }
             WindowEvent::CloseRequested { api, .. } => {
+                if window
+                    .app_handle()
+                    .state::<updater::UpdaterState>()
+                    .is_restarting()
+                {
+                    return;
+                }
                 let label = window.label().to_string();
                 let outcome = window
                     .app_handle()
